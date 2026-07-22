@@ -1,7 +1,7 @@
 # IdolRadar 产品需求文档（PRD · MVP）
 
 日期：2026-07-22
-状态：草稿（待评审）
+状态：已实现（待真机验收）
 上游输入：[功能设计文档](MVP-功能设计.md)、Figma 设计稿 <https://www.figma.com/design/TZbrL98T28IApjsOkC8aBP>
 下游产物：UI 设计文档、实现计划
 
@@ -152,7 +152,7 @@ IdolRadar 是一个面向追星族的微信小程序：用户"守护"一位 idol
 
 ### 5.4 订阅消息推送（FR-4，P0）
 
-- 每次进入小程序静默调用 `wx.requestSubscribeMessage`，成功 `subscribeQuota +1`；引导勾选「总是保持以上选择」
+- 用户点击「去开启」后调用 `wx.requestSubscribeMessage`，成功 `subscribeQuota +1`；引导勾选「总是保持以上选择」
 - `sendNotify` 仅向守护该 idol 且 `subscribeQuota > 0` 的用户发送；成功后额度 -1
 - 消息内容：idol 名、动态标题、时间；点击直达雷达首页并定位最新动态
 - 同轮多条新动态：每用户只推最新 1 条

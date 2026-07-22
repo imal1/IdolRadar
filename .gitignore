@@ -1,1 +1,11 @@
 .DS_Store
+.env
+.env.*
+!.env.example
+.codex/
+coverage/
+graphify-out/
+node_modules/
+**/node_modules/
+project.private.config.json
+npm-debug.log*

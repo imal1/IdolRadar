@@ -1,0 +1,7 @@
+{
+  "navigationBarTitleText": "IdolRadar",
+  "enablePullDownRefresh": true,
+  "onReachBottomDistance": 120,
+  "backgroundColor": "#f7f3f1",
+  "backgroundTextStyle": "dark"
+}

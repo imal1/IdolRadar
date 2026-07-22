@@ -1,0 +1,13 @@
+{
+  "name": "idolradar-fetch-feeds",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "engines": {
+    "node": "20.19.x"
+  },
+  "dependencies": {
+    "fast-xml-parser": "5.10.1",
+    "wx-server-sdk": "4.0.2"
+  }
+}

@@ -1,0 +1,69 @@
+<view class="page-shell me-page">
+  <view class="me-loading" wx:if="{{loading}}">
+    <view class="me-loading-avatar"></view>
+    <view class="me-loading-lines">
+      <view></view>
+      <view></view>
+    </view>
+  </view>
+
+  <view class="state-card" wx:elif="{{errorMessage}}">
+    <text class="state-title">个人页暂时没接上信号</text>
+    <text class="state-copy">{{errorMessage}}</text>
+    <button class="primary-button state-action" bindtap="retry">重新加载</button>
+  </view>
+
+  <block wx:else>
+    <view class="profile-card">
+      <view class="user-avatar">☺️</view>
+      <view class="profile-copy">
+        <text class="profile-name">微信用户</text>
+        <text class="profile-note">静默登录 · 无需注册</text>
+      </view>
+    </view>
+
+    <view class="me-card">
+      <text class="card-label">正在守护</text>
+      <view class="guard-row">
+        <view class="guard-avatar">
+          <text class="guard-initial">{{idol.initial}}</text>
+          <image wx:if="{{idol.avatarVisible}}" class="guard-avatar-image" src="{{idol.avatar}}" mode="aspectFill" binderror="avatarError"></image>
+        </view>
+        <view class="guard-copy">
+          <text class="guard-name">{{idol.name}}</text>
+          <text class="guard-note">已守护 {{guardDays}} 天 · {{sourceCount}} 个信号源</text>
+        </view>
+        <button class="secondary-button" bindtap="changeIdol">换一位</button>
+      </view>
+    </view>
+
+    <view class="me-card reminder-card">
+      <text class="card-label">蹲守提醒</text>
+      <view class="reminder-row">
+        <view class="reminder-copy">
+          <text class="reminder-title">{{subscribeQuota > 0 ? '提醒已开启' : '提醒未开启'}}</text>
+          <text class="reminder-note">{{subscribeQuota > 0 ? '剩余 ' + subscribeQuota + ' 次提醒额度' : '开启后她一营业，微信马上通知你'}}</text>
+        </view>
+        <button class="primary-button" loading="{{subscribing}}" disabled="{{subscribing}}" bindtap="enableSubscription">{{subscribeQuota > 0 ? '再订一次' : '去开启'}}</button>
+      </view>
+      <view class="subscription-tip">
+        <text>小提示：授权时勾选「总是保持以上选择」，以后就不用每次点啦</text>
+      </view>
+    </view>
+
+    <view class="about-list">
+      <button class="about-row" bindtap="showAbout">
+        <text>关于 IdolRadar</text>
+        <text class="about-value">v{{version}} ›</text>
+      </button>
+      <button class="about-row" bindtap="showSources">
+        <text>动态来源说明</text>
+        <text class="about-value">RSS 订阅源 ›</text>
+      </button>
+    </view>
+
+    <text class="slogan">追星是双向奔赴的浪漫 ♡</text>
+  </block>
+</view>
+
+<floating-nav current="me"></floating-nav>

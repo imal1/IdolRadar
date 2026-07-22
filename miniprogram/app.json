@@ -1,0 +1,20 @@
+{
+  "pages": [
+    "pages/radar/index",
+    "pages/picker/index",
+    "pages/me/index"
+  ],
+  "window": {
+    "navigationBarBackgroundColor": "#ffffff",
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "IdolRadar",
+    "backgroundColor": "#f7f3f1",
+    "backgroundTextStyle": "dark"
+  },
+  "usingComponents": {
+    "floating-nav": "/components/floating-nav/index"
+  },
+  "style": "v2",
+  "lazyCodeLoading": "requiredComponents",
+  "sitemapLocation": "sitemap.json"
+}

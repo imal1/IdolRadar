@@ -1,0 +1,42 @@
+{
+  "version": "2.0",
+  "envId": "{{env.CLOUDBASE_ENV_ID}}",
+  "functionRoot": "./cloudfunctions",
+  "functions": [
+    {
+      "name": "user",
+      "runtime": "Nodejs20.19",
+      "handler": "index.main",
+      "timeout": 15,
+      "memorySize": 256,
+      "installDependency": true
+    },
+    {
+      "name": "sendNotify",
+      "runtime": "Nodejs20.19",
+      "handler": "index.main",
+      "timeout": 120,
+      "memorySize": 256,
+      "installDependency": true,
+      "envVariables": {
+        "SUBSCRIBE_TEMPLATE_ID": "{{env.SUBSCRIBE_TEMPLATE_ID}}"
+      }
+    },
+    {
+      "name": "fetchFeeds",
+      "runtime": "Nodejs20.19",
+      "handler": "index.main",
+      "timeout": 180,
+      "memorySize": 512,
+      "installDependency": true,
+      "triggers": [
+        {
+          "name": "fetchFeedsEvery30Minutes",
+          "type": "timer",
+          "config": "0 */30 * * * * *"
+        }
+      ]
+    }
+  ]
+}
+

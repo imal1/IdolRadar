@@ -1,0 +1,80 @@
+<view class="page-shell picker-page">
+  <view class="picker-intro">
+    <text class="picker-title">今天想蹲谁？</text>
+    <text class="picker-subtitle">同时只能守护一位，换人后旧动态会清空</text>
+  </view>
+
+  <view class="search-box">
+    <view class="search-icon"></view>
+    <input
+      class="search-input"
+      value="{{query}}"
+      placeholder="输入名字找找看"
+      placeholder-class="search-placeholder"
+      confirm-type="search"
+      maxlength="30"
+      bindinput="search"
+    />
+    <button wx:if="{{query}}" class="clear-search" bindtap="clearSearch" aria-label="清空搜索">×</button>
+  </view>
+
+  <view class="picker-loading" wx:if="{{loading}}">
+    <view class="loading-dot"></view>
+    <text>正在读取守护名单…</text>
+  </view>
+
+  <view class="state-card" wx:elif="{{errorMessage}}">
+    <text class="state-title">名单暂时走丢了</text>
+    <text class="state-copy">{{errorMessage}}</text>
+    <button class="primary-button state-action" bindtap="retry">重新加载</button>
+  </view>
+
+  <block wx:else>
+    <view class="idol-list" wx:if="{{filteredIdols.length}}">
+      <view
+        wx:for="{{filteredIdols}}"
+        wx:key="id"
+        class="picker-card {{currentIdolId === item.id ? 'picker-card-current' : ''}}"
+      >
+        <view class="picker-avatar avatar-color-{{item.colorIndex}}">
+          <text class="picker-initial">{{item.initial}}</text>
+          <image
+            wx:if="{{item.avatarVisible}}"
+            class="picker-avatar-image"
+            src="{{item.avatar}}"
+            mode="aspectFill"
+            data-id="{{item.id}}"
+            binderror="avatarError"
+          ></image>
+        </view>
+
+        <view class="picker-info">
+          <view class="picker-name-row">
+            <text class="picker-name">{{item.name}}</text>
+            <text wx:if="{{currentIdolId === item.id}}" class="current-badge">在守护</text>
+          </view>
+          <text class="picker-bio">{{item.bio}}</text>
+          <text class="source-count">{{item.sourceCount}} 个信号源</text>
+        </view>
+
+        <button
+          class="pick-button {{currentIdolId === item.id ? 'pick-button-disabled' : ''}}"
+          disabled="{{currentIdolId === item.id || confirmingId || selectingId}}"
+          loading="{{confirmingId === item.id || selectingId === item.id}}"
+          data-id="{{item.id}}"
+          bindtap="selectIdol"
+        >{{currentIdolId === item.id ? '守护中' : (currentIdolId ? '换成她' : '守护')}}</button>
+      </view>
+    </view>
+
+    <view class="no-result" wx:else>
+      <text class="no-result-symbol">⌕</text>
+      <text class="state-title">没找到这位 idol</text>
+      <text class="state-copy">换个名字试试，或等待后续开放自助申请</text>
+    </view>
+
+    <text class="picker-footnote">想蹲的人不在里面？之后会开放自助申请~</text>
+  </block>
+</view>
+
+<floating-nav current="picker"></floating-nav>

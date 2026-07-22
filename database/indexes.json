@@ -1,0 +1,91 @@
+{
+  "idols": [
+    {
+      "name": "enabled_name",
+      "unique": false,
+      "fields": [
+        { "field": "enabled", "order": "asc" },
+        { "field": "name", "order": "asc" }
+      ]
+    },
+    {
+      "name": "enabled_id",
+      "unique": false,
+      "fields": [
+        { "field": "enabled", "order": "asc" },
+        { "field": "_id", "order": "asc" }
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "name": "enabled_idolId",
+      "unique": false,
+      "fields": [
+        { "field": "enabled", "order": "asc" },
+        { "field": "idolId", "order": "asc" }
+      ]
+    },
+    {
+      "name": "enabled_id",
+      "unique": false,
+      "fields": [
+        { "field": "enabled", "order": "asc" },
+        { "field": "_id", "order": "asc" }
+      ]
+    },
+    {
+      "name": "idolId_id",
+      "unique": false,
+      "fields": [
+        { "field": "idolId", "order": "asc" },
+        { "field": "_id", "order": "asc" }
+      ]
+    },
+    {
+      "name": "idolId_enabled_id",
+      "unique": false,
+      "fields": [
+        { "field": "idolId", "order": "asc" },
+        { "field": "enabled", "order": "asc" },
+        { "field": "_id", "order": "asc" }
+      ]
+    }
+  ],
+  "posts": [
+    {
+      "name": "link_unique",
+      "unique": true,
+      "fields": [
+        { "field": "link", "order": "asc" }
+      ]
+    },
+    {
+      "name": "idolId_publishedAt",
+      "unique": false,
+      "fields": [
+        { "field": "idolId", "order": "asc" },
+        { "field": "publishedAt", "order": "desc" },
+        { "field": "_id", "order": "desc" }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "name": "openid_unique",
+      "unique": true,
+      "fields": [
+        { "field": "openid", "order": "asc" }
+      ]
+    },
+    {
+      "name": "idolId_subscribeQuota",
+      "unique": false,
+      "fields": [
+        { "field": "idolId", "order": "asc" },
+        { "field": "subscribeQuota", "order": "asc" },
+        { "field": "_id", "order": "asc" }
+      ]
+    }
+  ]
+}

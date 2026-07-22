@@ -1,0 +1,112 @@
+<view class="page-shell radar-page">
+  <view class="loading-card" wx:if="{{loading}}">
+    <view class="loading-orbit"></view>
+    <text class="state-title">雷达启动中</text>
+    <text class="state-copy">正在接收她的最新信号…</text>
+  </view>
+
+  <view class="state-card" wx:elif="{{errorMessage}}">
+    <text class="state-title">暂时没接上信号</text>
+    <text class="state-copy">{{errorMessage}}</text>
+    <button class="primary-button state-action" bindtap="retry">重新感应</button>
+  </view>
+
+  <block wx:else>
+    <view class="idol-header">
+      <view class="idol-row">
+        <view class="avatar avatar-large avatar-color-0">
+          <text class="avatar-initial">{{idol.initial}}</text>
+          <image wx:if="{{idol.avatarVisible}}" class="avatar-image" src="{{idol.avatar}}" mode="aspectFill" binderror="avatarError"></image>
+          <view class="online-dot"></view>
+        </view>
+        <view class="idol-info">
+          <view class="idol-name-row">
+            <text class="idol-name">{{idol.name}}</text>
+            <text class="business-badge">营业中</text>
+          </view>
+          <view class="signal-row">
+            <view class="signal-dot"></view>
+            <text>感应中 · {{latestPost ? '最近更新 ' + latestPost.timeText : '等待第一次更新'}}</text>
+          </view>
+        </view>
+        <button class="change-button" bindtap="changeIdol">换她</button>
+      </view>
+
+      <view class="stats-row">
+        <view class="stat-cell">
+          <text class="stat-value">{{stats.todayCount}}</text>
+          <text class="stat-label">今日动态</text>
+        </view>
+        <view class="stat-cell">
+          <text class="stat-value">{{stats.sourceCount}}</text>
+          <text class="stat-label">信号源</text>
+        </view>
+        <view class="stat-cell">
+          <text class="stat-value stat-accent">{{stats.signalStrength}}</text>
+          <text class="stat-label">信号强度</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="subscribe-banner" wx:if="{{showSubscribeBanner}}">
+      <image class="reminder-icon" src="/assets/reminder.svg"></image>
+      <view class="subscribe-copy">
+        <text class="subscribe-title">开启蹲守提醒</text>
+        <text class="subscribe-subtitle">她一营业，微信马上叫你</text>
+      </view>
+      <button class="primary-button subscribe-button" loading="{{subscribing}}" disabled="{{subscribing}}" bindtap="enableSubscription">去开启</button>
+    </view>
+
+    <view class="section-heading">
+      <text class="section-title">刚蹲到的</text>
+      <text class="section-note">每 30 分钟感应一次</text>
+    </view>
+
+    <view wx:if="{{latestPost}}" id="latest-post" class="latest-card deep-highlight" data-link="{{latestPost.link}}" catchtap="copyLink">
+      <view class="post-meta">
+        <text class="caught-tag">蹲到了！</text>
+        <text class="channel-tag {{latestPost.tagClass}}">{{latestPost.channel}}</text>
+        <text class="post-time">{{latestPost.timeText}}</text>
+      </view>
+      <text class="latest-title">{{latestPost.title}}</text>
+      <text class="latest-summary">{{latestPost.summary}}</text>
+      <button class="copy-button" data-link="{{latestPost.link}}" catchtap="copyLink">⌁ 复制原文链接</button>
+    </view>
+
+    <view wx:else class="empty-card">
+      <text class="empty-symbol">⌁</text>
+      <text class="state-title">雷达正在安静蹲守</text>
+      <text class="state-copy">首次抓取完成后，她的动态会出现在这里</text>
+    </view>
+
+    <view class="section-heading previous-heading" wx:if="{{latestPost}}">
+      <text class="section-title">之前的动态</text>
+    </view>
+
+    <view class="feed-list" wx:if="{{previousPosts.length}}">
+      <view
+        wx:for="{{previousPosts}}"
+        wx:key="id"
+        id="post-{{item.id}}"
+        class="feed-item"
+        data-link="{{item.link}}"
+        catchtap="copyLink"
+      >
+        <view class="post-meta">
+          <text class="channel-tag {{item.tagClass}}">{{item.channel}}</text>
+          <text class="post-time">{{item.timeText}}</text>
+        </view>
+        <text class="feed-title">{{item.title}}</text>
+        <text class="feed-summary">{{item.summary}}</text>
+      </view>
+    </view>
+
+    <view class="feed-footer" wx:if="{{latestPost}}">
+      <text wx:if="{{loadingMore}}">正在搜索更多信号…</text>
+      <text wx:elif="{{hasMore}}">上滑加载更多 · 每页 {{pageSize}} 条</text>
+      <text wx:else>已经蹲到这里啦</text>
+    </view>
+  </block>
+</view>
+
+<floating-nav current="radar"></floating-nav>

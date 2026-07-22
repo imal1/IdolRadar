@@ -1,0 +1,2 @@
+{"_id":"source_demo_su_nian_official","idolId":"idol_demo_su_nian","rssUrl":"https://feeds.example.invalid/su-nian.xml","channel":"官方动态","enabled":true,"lastFetchStatus":"never"}
+{"_id":"source_demo_lin_wan_official","idolId":"idol_demo_lin_wan","rssUrl":"https://feeds.example.invalid/lin-wan.xml","channel":"官方动态","enabled":true,"lastFetchStatus":"never"}

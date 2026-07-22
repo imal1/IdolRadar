@@ -1,0 +1,84 @@
+page {
+  min-height: 100%;
+  background: linear-gradient(180deg, #fdf3f0 0%, #faf6f3 30%, #f7f3f1 100%);
+  color: #3d2f33;
+  font-family: "Noto Sans SC", -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 28rpx;
+}
+
+view,
+text,
+image,
+button,
+input {
+  box-sizing: border-box;
+}
+
+button {
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  line-height: normal;
+}
+
+button::after {
+  border: 0;
+}
+
+.page-shell {
+  min-height: 100vh;
+  padding: 20rpx 32rpx calc(144rpx + env(safe-area-inset-bottom));
+}
+
+.state-card {
+  padding: 72rpx 36rpx;
+  border-radius: 40rpx;
+  background: #ffffff;
+  box-shadow: 0 8rpx 32rpx rgba(61, 46, 51, 0.05);
+  text-align: center;
+}
+
+.state-title {
+  display: block;
+  color: #3d2f33;
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
+.state-copy {
+  display: block;
+  margin-top: 12rpx;
+  color: #a58a94;
+  font-size: 24rpx;
+  line-height: 1.6;
+}
+
+.primary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 58rpx;
+  padding: 0 28rpx;
+  border-radius: 28rpx;
+  background: linear-gradient(135deg, #e78aa4, #c4526e);
+  color: #ffffff;
+  font-size: 24rpx;
+  font-weight: 500;
+}
+
+.secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 56rpx;
+  padding: 0 26rpx;
+  border-radius: 26rpx;
+  background: #fdf0f3;
+  color: #c4526e;
+  font-size: 24rpx;
+  font-weight: 500;
+}
+
+.state-action {
+  margin-top: 28rpx;
+}

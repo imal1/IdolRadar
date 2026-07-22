@@ -1,0 +1,17 @@
+<view class="nav-backdrop" wx:if="{{open}}" catchtap="close"></view>
+<view class="floating-nav {{open ? 'floating-nav-open' : ''}}">
+  <view class="nav-menu" wx:if="{{open}}">
+    <button
+      wx:for="{{items}}"
+      wx:key="key"
+      class="nav-item {{current === item.key ? 'nav-item-current' : ''}}"
+      data-key="{{item.key}}"
+      data-path="{{item.path}}"
+      catchtap="navigate"
+      aria-label="前往{{item.label}}页"
+    >{{item.label}}</button>
+  </view>
+  <button class="nav-trigger" catchtap="toggle" aria-label="{{open ? '收起页面导航' : '展开页面导航'}}">
+    <image class="nav-trigger-image" src="/assets/fab.svg" mode="aspectFit"></image>
+  </button>
+</view>
