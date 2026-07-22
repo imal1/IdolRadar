@@ -5,6 +5,7 @@
     "pages/me/index"
   ],
   "window": {
+    "navigationStyle": "custom",
     "navigationBarBackgroundColor": "#ffffff",
     "navigationBarTextStyle": "black",
     "navigationBarTitleText": "IdolRadar",

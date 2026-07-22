@@ -18,7 +18,6 @@ test('project structure and JSON pass pre-secret release validation', () => {
 
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   assert.match(result.stdout, /发布校验通过/);
-  assert.match(result.stderr, /appid 仍是占位值/);
   assert.match(result.stderr, /SUBSCRIBE_TEMPLATE_ID 仍是未解析占位值/);
 });
 

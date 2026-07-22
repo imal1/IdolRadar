@@ -12,56 +12,69 @@
   position: fixed;
   z-index: 49;
   right: 0;
-  bottom: calc(104rpx + env(safe-area-inset-bottom));
+  bottom: calc(212rpx + env(safe-area-inset-bottom));
   display: flex;
-  align-items: center;
-}
-
-.floating-nav-open {
-  right: 18rpx;
-}
-
-.nav-trigger {
-  position: relative;
-  width: 92rpx;
-  height: 92rpx;
-  overflow: visible;
-  background: transparent;
-}
-
-.nav-trigger-image {
-  position: absolute;
-  top: -22rpx;
-  left: -32rpx;
-  width: 156rpx;
-  height: 156rpx;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 19rpx;
 }
 
 .nav-menu {
   display: flex;
-  align-items: center;
-  gap: 8rpx;
-  margin-right: -22rpx;
-  padding: 10rpx 14rpx;
-  border: 1rpx solid #f2d9e0;
-  border-radius: 34rpx;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 8rpx 28rpx rgba(61, 46, 51, 0.1);
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 19rpx;
 }
 
 .nav-item {
-  min-width: 82rpx;
-  height: 48rpx;
-  padding: 0 16rpx;
-  border-radius: 24rpx;
-  background: transparent;
-  color: #a58a94;
-  font-size: 22rpx;
-  line-height: 48rpx;
+  padding: 19rpx 31rpx 19rpx 27rpx;
+  border-radius: 35rpx 0 0 35rpx;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8rpx 27rpx rgba(196, 82, 110, 0.18);
+  color: #8a7580;
+  font-size: 24rpx;
+  font-weight: 600;
+  line-height: 1.2;
+  animation: nav-floatin 0.25s ease;
+}
+
+.nav-item-1 {
+  animation-duration: 0.3s;
+}
+
+.nav-item-2 {
+  animation-duration: 0.35s;
 }
 
 .nav-item-current {
-  background: #fdf0f3;
-  color: #c4526e;
-  font-weight: 600;
+  background: linear-gradient(135deg, #e78aa4, #c4526e);
+  color: #ffffff;
+}
+
+.nav-trigger {
+  width: 88rpx;
+  height: 88rpx;
+  margin-right: -27rpx;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #e78aa4, #c4526e);
+  box-shadow: 0 10rpx 31rpx rgba(196, 82, 110, 0.3);
+  color: #ffffff;
+  font-size: 33rpx;
+  line-height: 88rpx;
+  text-align: center;
+}
+
+.floating-nav.snapping {
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes nav-floatin {
+  from {
+    opacity: 0;
+    transform: translateY(10rpx);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }

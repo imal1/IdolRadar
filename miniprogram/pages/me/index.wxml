@@ -1,4 +1,5 @@
 <view class="page-shell me-page">
+  <view class="page-title">我的</view>
   <view class="me-loading" wx:if="{{loading}}">
     <view class="me-loading-avatar"></view>
     <view class="me-loading-lines">
@@ -10,7 +11,7 @@
   <view class="state-card" wx:elif="{{errorMessage}}">
     <text class="state-title">个人页暂时没接上信号</text>
     <text class="state-copy">{{errorMessage}}</text>
-    <button class="primary-button state-action" bindtap="retry">重新加载</button>
+    <view class="primary-button state-action" aria-role="button" bindtap="retry">重新加载</view>
   </view>
 
   <block wx:else>
@@ -33,7 +34,7 @@
           <text class="guard-name">{{idol.name}}</text>
           <text class="guard-note">已守护 {{guardDays}} 天 · {{sourceCount}} 个信号源</text>
         </view>
-        <button class="secondary-button" bindtap="changeIdol">换一位</button>
+        <view class="secondary-button" aria-role="button" bindtap="changeIdol">换一位</view>
       </view>
     </view>
 
@@ -44,7 +45,7 @@
           <text class="reminder-title">{{subscribeQuota > 0 ? '提醒已开启' : '提醒未开启'}}</text>
           <text class="reminder-note">{{subscribeQuota > 0 ? '剩余 ' + subscribeQuota + ' 次提醒额度' : '开启后她一营业，微信马上通知你'}}</text>
         </view>
-        <button class="primary-button" loading="{{subscribing}}" disabled="{{subscribing}}" bindtap="enableSubscription">{{subscribeQuota > 0 ? '再订一次' : '去开启'}}</button>
+        <view class="primary-button" aria-role="button" bindtap="enableSubscription">{{subscribeQuota > 0 ? '再订一次' : '去开启'}}</view>
       </view>
       <view class="subscription-tip">
         <text>小提示：授权时勾选「总是保持以上选择」，以后就不用每次点啦</text>
@@ -52,14 +53,14 @@
     </view>
 
     <view class="about-list">
-      <button class="about-row" bindtap="showAbout">
+      <view class="about-row" aria-role="button" bindtap="showAbout">
         <text>关于 IdolRadar</text>
         <text class="about-value">v{{version}} ›</text>
-      </button>
-      <button class="about-row" bindtap="showSources">
+      </view>
+      <view class="about-row" aria-role="button" bindtap="showSources">
         <text>动态来源说明</text>
         <text class="about-value">RSS 订阅源 ›</text>
-      </button>
+      </view>
     </view>
 
     <text class="slogan">追星是双向奔赴的浪漫 ♡</text>

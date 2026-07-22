@@ -2,8 +2,8 @@ page {
   min-height: 100%;
   background: linear-gradient(180deg, #fdf3f0 0%, #faf6f3 30%, #f7f3f1 100%);
   color: #3d2f33;
-  font-family: "Noto Sans SC", -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
-  font-size: 28rpx;
+  font-family: -apple-system, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+  font-size: 27rpx;
 }
 
 view,
@@ -19,6 +19,12 @@ button {
   padding: 0;
   border-radius: 0;
   line-height: normal;
+  width: auto;
+  min-width: 0;
+  font-size: inherit;
+  color: inherit;
+  background: transparent;
+  text-align: inherit;
 }
 
 button::after {
@@ -27,21 +33,30 @@ button::after {
 
 .page-shell {
   min-height: 100vh;
-  padding: 20rpx 32rpx calc(144rpx + env(safe-area-inset-bottom));
+  padding: 19rpx 31rpx calc(138rpx + env(safe-area-inset-bottom));
+  padding-top: calc(env(safe-area-inset-top, 0rpx) + 96rpx);
+}
+
+.page-title {
+  padding: 12rpx 0 4rpx;
+  color: #3d2f33;
+  font-size: 31rpx;
+  font-weight: 600;
+  text-align: center;
 }
 
 .state-card {
-  padding: 72rpx 36rpx;
-  border-radius: 40rpx;
+  padding: 69rpx 35rpx;
+  border-radius: 38rpx;
   background: #ffffff;
-  box-shadow: 0 8rpx 32rpx rgba(61, 46, 51, 0.05);
+  box-shadow: 0 8rpx 31rpx rgba(61, 46, 51, 0.05);
   text-align: center;
 }
 
 .state-title {
   display: block;
   color: #3d2f33;
-  font-size: 30rpx;
+  font-size: 29rpx;
   font-weight: 600;
 }
 
@@ -49,7 +64,7 @@ button::after {
   display: block;
   margin-top: 12rpx;
   color: #a58a94;
-  font-size: 24rpx;
+  font-size: 23rpx;
   line-height: 1.6;
 }
 
@@ -57,28 +72,26 @@ button::after {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 58rpx;
-  padding: 0 28rpx;
-  border-radius: 28rpx;
+  padding: 13rpx 25rpx;
+  border-radius: 25rpx;
   background: linear-gradient(135deg, #e78aa4, #c4526e);
   color: #ffffff;
-  font-size: 24rpx;
-  font-weight: 500;
+  font-size: 23rpx;
+  font-weight: 600;
 }
 
 .secondary-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 56rpx;
-  padding: 0 26rpx;
-  border-radius: 26rpx;
+  padding: 13rpx 25rpx;
+  border-radius: 25rpx;
   background: #fdf0f3;
   color: #c4526e;
-  font-size: 24rpx;
-  font-weight: 500;
+  font-size: 23rpx;
+  font-weight: 600;
 }
 
 .state-action {
-  margin-top: 28rpx;
+  margin-top: 27rpx;
 }

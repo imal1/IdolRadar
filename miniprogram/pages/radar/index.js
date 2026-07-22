@@ -91,7 +91,8 @@ Page({
     subscribeQuota: 0,
     showSubscribeBanner: true,
     pageSize: PAGE_SIZE,
-    deepLinkPostId: ''
+    deepLinkPostId: '',
+    copied: false
   },
 
   onLoad: function (options) {
@@ -279,6 +280,7 @@ Page({
   },
 
   copyLink: function (event) {
+    var page = this;
     var link = event.currentTarget.dataset.link;
     if (!link) {
       wx.showToast({ title: '原文链接暂不可用', icon: 'none' });
@@ -287,7 +289,12 @@ Page({
     wx.setClipboardData({
       data: link,
       success: function () {
-        wx.showToast({ title: '原文链接已复制', icon: 'success' });
+        wx.showToast({ title: '链接已复制，去原站看她', icon: 'none' });
+        page.setData({ copied: true });
+        clearTimeout(page._copiedTimer);
+        page._copiedTimer = setTimeout(function () {
+          page.setData({ copied: false });
+        }, 2000);
       },
       fail: function () {
         wx.showToast({ title: '复制失败，请重试', icon: 'none' });

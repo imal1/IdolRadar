@@ -10,7 +10,8 @@ function firstDefined() {
 function normalizeIdol(raw, index) {
   raw = raw || {};
   var name = String(raw.name || '未命名');
-  var characters = Array.from ? Array.from(name) : name.split('');
+  var plainName = name.replace(/[（(【\[].*$/, '').trim() || name;
+  var characters = Array.from ? Array.from(plainName) : plainName.split('');
   var sourceCount = Number(firstDefined(raw.sourceCount, raw.sourcesCount, raw.enabledSourceCount, 0));
   return {
     id: String(raw._id || raw.id || raw.idolId || ''),

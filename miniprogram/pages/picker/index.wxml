@@ -1,4 +1,5 @@
 <view class="page-shell picker-page">
+  <view class="page-title">选择守护对象</view>
   <view class="picker-intro">
     <text class="picker-title">今天想蹲谁？</text>
     <text class="picker-subtitle">同时只能守护一位，换人后旧动态会清空</text>
@@ -15,7 +16,7 @@
       maxlength="30"
       bindinput="search"
     />
-    <button wx:if="{{query}}" class="clear-search" bindtap="clearSearch" aria-label="清空搜索">×</button>
+    <view wx:if="{{query}}" class="clear-search" aria-role="button" bindtap="clearSearch" aria-label="清空搜索">×</view>
   </view>
 
   <view class="picker-loading" wx:if="{{loading}}">
@@ -26,7 +27,7 @@
   <view class="state-card" wx:elif="{{errorMessage}}">
     <text class="state-title">名单暂时走丢了</text>
     <text class="state-copy">{{errorMessage}}</text>
-    <button class="primary-button state-action" bindtap="retry">重新加载</button>
+    <view class="primary-button state-action" aria-role="button" bindtap="retry">重新加载</view>
   </view>
 
   <block wx:else>
@@ -57,13 +58,12 @@
           <text class="source-count">{{item.sourceCount}} 个信号源</text>
         </view>
 
-        <button
+        <view
           class="pick-button {{currentIdolId === item.id ? 'pick-button-disabled' : ''}}"
-          disabled="{{currentIdolId === item.id || confirmingId || selectingId}}"
-          loading="{{confirmingId === item.id || selectingId === item.id}}"
+          aria-role="button"
           data-id="{{item.id}}"
           bindtap="selectIdol"
-        >{{currentIdolId === item.id ? '守护中' : (currentIdolId ? '换成她' : '守护')}}</button>
+        >{{currentIdolId === item.id ? '守护中' : (currentIdolId ? '换成她' : '守护')}}</view>
       </view>
     </view>
 

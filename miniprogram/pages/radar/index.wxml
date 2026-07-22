@@ -1,4 +1,5 @@
 <view class="page-shell radar-page">
+  <view class="page-title">IdolRadar</view>
   <view class="loading-card" wx:if="{{loading}}">
     <view class="loading-orbit"></view>
     <text class="state-title">雷达启动中</text>
@@ -8,11 +9,12 @@
   <view class="state-card" wx:elif="{{errorMessage}}">
     <text class="state-title">暂时没接上信号</text>
     <text class="state-copy">{{errorMessage}}</text>
-    <button class="primary-button state-action" bindtap="retry">重新感应</button>
+    <view class="primary-button state-action" aria-role="button" bindtap="retry">重新感应</view>
   </view>
 
   <block wx:else>
     <view class="idol-header">
+      <view class="sweep-light"></view>
       <view class="idol-row">
         <view class="avatar avatar-large avatar-color-0">
           <text class="avatar-initial">{{idol.initial}}</text>
@@ -29,7 +31,7 @@
             <text>感应中 · {{latestPost ? '最近更新 ' + latestPost.timeText : '等待第一次更新'}}</text>
           </view>
         </view>
-        <button class="change-button" bindtap="changeIdol">换她</button>
+        <view class="change-button" aria-role="button" bindtap="changeIdol">换她</view>
       </view>
 
       <view class="stats-row">
@@ -54,7 +56,7 @@
         <text class="subscribe-title">开启蹲守提醒</text>
         <text class="subscribe-subtitle">她一营业，微信马上叫你</text>
       </view>
-      <button class="primary-button subscribe-button" loading="{{subscribing}}" disabled="{{subscribing}}" bindtap="enableSubscription">去开启</button>
+      <view class="primary-button subscribe-button" aria-role="button" bindtap="enableSubscription">去开启</view>
     </view>
 
     <view class="section-heading">
@@ -70,7 +72,7 @@
       </view>
       <text class="latest-title">{{latestPost.title}}</text>
       <text class="latest-summary">{{latestPost.summary}}</text>
-      <button class="copy-button" data-link="{{latestPost.link}}" catchtap="copyLink">⌁ 复制原文链接</button>
+      <view class="copy-button" aria-role="button" data-link="{{latestPost.link}}" catchtap="copyLink">{{copied ? '已复制 ✓' : '⌁ 复制原文链接'}}</view>
     </view>
 
     <view wx:else class="empty-card">
