@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#efe9e6;font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased}
+a{color:#c4526e;text-decoration:none}a:hover{color:#a83e58}
+@keyframes breathe{0%,100%{box-shadow:0 0 0 0 rgba(228,120,150,.35)}50%{box-shadow:0 0 0 14px rgba(228,120,150,0)}}
+@keyframes sweep{0%{transform:translateX(-120%)}100%{transform:translateX(240%)}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+@keyframes floatin{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+</style>
+</helmet>
+<div style="width:390px;min-height:844px;margin:0 auto;background:linear-gradient(180deg,#fdf3f0 0%,#faf6f3 30%,#f7f3f1 100%);position:relative;overflow:hidden;display:flex;flex-direction:column">
+  <!-- status bar + capsule -->
+  <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px 0;font-size:15px;font-weight:600;color:#3d2f33">
+    <div>9:41</div>
+    <div style="display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.75);border:1px solid rgba(0,0,0,.06);border-radius:16px;padding:5px 12px;font-size:12px;color:#3d2f33">
+      <span style="letter-spacing:2px">···</span><span style="width:1px;height:12px;background:rgba(0,0,0,.12)"></span><span style="width:12px;height:12px;border:1.5px solid #3d2f33;border-radius:50%;display:inline-block"></span>
+    </div>
+  </div>
+  <div style="text-align:center;font-size:16px;font-weight:600;color:#3d2f33;padding:6px 0 2px">{{ navTitle }}</div>
+
+  <!-- ═══ 雷达追踪页 ═══ -->
+  <sc-if value="{{ isRadar }}" hint-placeholder-val="{{ true }}">
+  <div style="flex:1;padding:10px 16px 96px;display:flex;flex-direction:column;gap:14px">
+    <!-- idol 头部感应卡 -->
+    <div style="position:relative;overflow:hidden;background:linear-gradient(135deg,#fbe4e8 0%,#f4e6f2 55%,#ece7f6 100%);border-radius:22px;padding:18px 18px 16px;box-shadow:0 6px 20px rgba(196,82,110,.10)">
+      <div style="position:absolute;top:0;left:0;bottom:0;width:45%;background:linear-gradient(105deg,transparent,rgba(255,255,255,.55),transparent);animation:sweep 3.8s ease-in-out infinite;pointer-events:none"></div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <div style="position:relative;flex:none">
+          <div style="width:64px;height:64px;border-radius:50%;background:linear-gradient(140deg,#e89bb0,#b79ade);display:flex;align-items:center;justify-content:center;color:#fff;font-size:24px;font-weight:600;border:3px solid #fff;animation:breathe 2.6s ease-out infinite">{{ idolInitial }}</div>
+          <div style="position:absolute;right:0;bottom:2px;width:14px;height:14px;border-radius:50%;background:#5ec98f;border:2.5px solid #fff"></div>
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:baseline;gap:8px">
+            <div style="font-size:20px;font-weight:700;color:#3d2f33">{{ idolName }}</div>
+            <div style="font-size:11px;color:#c4526e;background:rgba(255,255,255,.7);border-radius:8px;padding:2px 7px;font-weight:600">营业中</div>
+          </div>
+          <div style="font-size:12px;color:#8a7580;margin-top:4px;display:flex;align-items:center;gap:5px">
+            <span style="width:6px;height:6px;border-radius:50%;background:#e47896;background:#e47896;animation:blink 1.8s infinite"></span>
+            感应中 · 最近更新 {{ lastUpdate }}
+          </div>
+        </div>
+        <div onClick="{{ goPick }}" style="flex:none;font-size:12px;color:#a58a94;background:rgba(255,255,255,.6);border-radius:12px;padding:6px 10px;cursor:pointer">换她</div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <div style="flex:1;background:rgba(255,255,255,.65);border-radius:14px;padding:9px 0;text-align:center"><div style="font-size:17px;font-weight:700;color:#3d2f33">{{ todayCount }}</div><div style="font-size:10.5px;color:#a58a94;margin-top:1px">今日动态</div></div>
+        <div style="flex:1;background:rgba(255,255,255,.65);border-radius:14px;padding:9px 0;text-align:center"><div style="font-size:17px;font-weight:700;color:#3d2f33">{{ sourceCount }}</div><div style="font-size:10.5px;color:#a58a94;margin-top:1px">信号源</div></div>
+        <div style="flex:1;background:rgba(255,255,255,.65);border-radius:14px;padding:9px 0;text-align:center"><div style="font-size:17px;font-weight:700;color:#c4526e">满格</div><div style="font-size:10.5px;color:#a58a94;margin-top:1px">信号强度</div></div>
+      </div>
+    </div>
+
+    <!-- 蹲守推送条 -->
+    <sc-if value="{{ showPushBanner }}" hint-placeholder-val="{{ true }}">
+    <div style="display:flex;align-items:center;gap:10px;background:#fff;border:1px dashed #ecb7c5;border-radius:16px;padding:11px 14px">
+      <div style="flex:none;width:34px;height:34px;border-radius:12px;background:linear-gradient(140deg,#fde3ea,#f0e4fa);display:flex;align-items:center;justify-content:center;font-size:15px;color:#c4526e;font-weight:700">✿</div>
+      <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;color:#3d2f33">开启蹲守提醒</div><div style="font-size:11px;color:#a58a94;margin-top:1px">她一营业,微信马上叫你</div></div>
+      <div onClick="{{ subscribe }}" style="flex:none;font-size:12px;font-weight:600;color:#fff;background:linear-gradient(135deg,#e78aa4,#c4526e);border-radius:14px;padding:7px 14px;cursor:pointer">去开启</div>
+    </div>
+    </sc-if>
+
+    <!-- 置顶最新大卡 -->
+    <div style="display:flex;align-items:baseline;justify-content:space-between;padding:2px 4px 0">
+      <div style="font-size:15px;font-weight:700;color:#3d2f33">刚蹲到的</div>
+      <div style="font-size:11px;color:#b59aa5;letter-spacing:.05em">每 30 分钟感应一次</div>
+    </div>
+    <div style="background:#fff;border-radius:20px;padding:16px;box-shadow:0 4px 16px rgba(61,47,51,.05);border:1.5px solid #f5d4dd;animation:floatin .5s ease">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:10.5px;font-weight:700;color:#fff;background:linear-gradient(135deg,#e78aa4,#c4526e);border-radius:8px;padding:3px 8px">蹲到了!</span>
+        <span style="font-size:11px;color:#8f7fa8;background:#f1ecfa;border-radius:8px;padding:3px 8px">{{ topPost.channel }}</span>
+        <span style="flex:1"></span>
+        <span style="font-size:11px;color:#b59aa5">{{ topPost.time }}</span>
+      </div>
+      <div style="font-size:15px;font-weight:600;color:#3d2f33;line-height:1.5;margin-top:10px">{{ topPost.title }}</div>
+      <div style="font-size:12.5px;color:#8a7580;line-height:1.65;margin-top:6px">{{ topPost.summary }}</div>
+      <div onClick="{{ copyLink }}" style="display:inline-flex;align-items:center;gap:4px;margin-top:12px;font-size:12px;color:#c4526e;background:#fdf0f3;border-radius:12px;padding:6px 12px;cursor:pointer">{{ copyLabel }}</div>
+    </div>
+
+    <!-- 紧凑动态流 -->
+    <div style="font-size:15px;font-weight:700;color:#3d2f33;padding:4px 4px 0">之前的动态</div>
+    <div style="background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 4px 16px rgba(61,47,51,.04)">
+      <sc-for list="{{ feed }}" as="post" hint-placeholder-count="4">
+        <div style="padding:13px 16px;border-bottom:1px solid #f7eef1;display:flex;flex-direction:column;gap:5px">
+          <div style="display:flex;align-items:center;gap:7px">
+            <span style="font-size:10.5px;color:{{ post.tagColor }};background:{{ post.tagBg }};border-radius:7px;padding:2px 7px;font-weight:600">{{ post.channel }}</span>
+            <span style="flex:1"></span>
+            <span style="font-size:11px;color:#b59aa5">{{ post.time }}</span>
+          </div>
+          <div style="font-size:13.5px;font-weight:600;color:#3d2f33;line-height:1.45">{{ post.title }}</div>
+          <div style="font-size:11.5px;color:#a08b95;line-height:1.55;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">{{ post.summary }}</div>
+        </div>
+      </sc-for>
+      <div style="text-align:center;font-size:12px;color:#b59aa5;padding:13px">上滑加载更多 · 每页 20 条</div>
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- ═══ idol 选择页 ═══ -->
+  <sc-if value="{{ isPick }}" hint-placeholder-val="{{ false }}">
+  <div style="flex:1;padding:10px 16px 96px;display:flex;flex-direction:column;gap:14px">
+    <div style="font-size:22px;font-weight:700;color:#3d2f33;padding:6px 4px 0">今天想蹲谁?</div>
+    <div style="font-size:12.5px;color:#a58a94;padding:0 4px;margin-top:-8px">同时只能守护一位,换人后旧动态会清空</div>
+    <div style="display:flex;align-items:center;gap:8px;background:#fff;border-radius:16px;padding:11px 14px;box-shadow:0 3px 10px rgba(61,47,51,.04)">
+      <span style="width:14px;height:14px;border:2px solid #c9adb8;border-radius:50%;position:relative;flex:none"><span style="position:absolute;width:2px;height:6px;background:#c9adb8;bottom:-4px;right:-3px;transform:rotate(-45deg);border-radius:2px"></span></span>
+      <input value="{{ query }}" onChange="{{ onSearch }}" placeholder="输入名字找找看" style="border:none;outline:none;background:transparent;font-size:13.5px;color:#3d2f33;flex:1;font-family:inherit" />
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <sc-for list="{{ idols }}" as="it" hint-placeholder-count="3">
+        <div onClick="{{ it.pick }}" style="display:flex;align-items:center;gap:13px;background:#fff;border-radius:18px;padding:14px;cursor:pointer;border:1.5px solid {{ it.border }};box-shadow:0 3px 12px rgba(61,47,51,.04)">
+          <div style="width:52px;height:52px;border-radius:50%;background:{{ it.grad }};display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;font-weight:600;flex:none">{{ it.initial }}</div>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:7px"><span style="font-size:15.5px;font-weight:700;color:#3d2f33">{{ it.name }}</span><sc-if value="{{ it.current }}" hint-placeholder-val="{{ false }}"><span style="font-size:10px;color:#c4526e;background:#fdf0f3;border-radius:7px;padding:2px 6px;font-weight:600">在守护</span></sc-if></div>
+            <div style="font-size:11.5px;color:#a08b95;margin-top:3px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden">{{ it.bio }}</div>
+            <div style="font-size:10.5px;color:#b59aa5;margin-top:3px">{{ it.sources }} 个信号源</div>
+          </div>
+          <div style="flex:none;font-size:12px;font-weight:600;color:{{ it.btnColor }};background:{{ it.btnBg }};border-radius:13px;padding:7px 13px">{{ it.btnLabel }}</div>
+        </div>
+      </sc-for>
+    </div>
+    <div style="text-align:center;font-size:11.5px;color:#c0a8b2;padding-top:4px">想蹲的人不在里面? 之后会开放自助申请~</div>
+  </div>
+  </sc-if>
+
+  <!-- ═══ 用户信息页 ═══ -->
+  <sc-if value="{{ isMe }}" hint-placeholder-val="{{ false }}">
+  <div style="flex:1;padding:10px 16px 96px;display:flex;flex-direction:column;gap:14px">
+    <div style="background:linear-gradient(135deg,#fbe4e8,#ece7f6);border-radius:22px;padding:20px 18px;display:flex;align-items:center;gap:14px">
+      <div style="width:56px;height:56px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;color:#d3a4b5">☺</div>
+      <div style="flex:1"><div style="font-size:16px;font-weight:700;color:#3d2f33">微信用户</div><div style="font-size:11.5px;color:#a58a94;margin-top:3px">静默登录 · 无需注册</div></div>
+    </div>
+    <div style="background:#fff;border-radius:20px;padding:16px;box-shadow:0 4px 16px rgba(61,47,51,.04)">
+      <div style="font-size:12px;color:#b59aa5;font-weight:600;letter-spacing:.06em">正在守护</div>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:12px">
+        <div style="width:46px;height:46px;border-radius:50%;background:linear-gradient(140deg,#e89bb0,#b79ade);display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;font-weight:600">{{ idolInitial }}</div>
+        <div style="flex:1"><div style="font-size:15px;font-weight:700;color:#3d2f33">{{ idolName }}</div><div style="font-size:11px;color:#a58a94;margin-top:2px">已守护 12 天 · {{ sourceCount }} 个信号源</div></div>
+        <div onClick="{{ goPick }}" style="font-size:12px;font-weight:600;color:#c4526e;background:#fdf0f3;border-radius:13px;padding:7px 13px;cursor:pointer">换一位</div>
+      </div>
+    </div>
+    <div style="background:#fff;border-radius:20px;padding:16px;box-shadow:0 4px 16px rgba(61,47,51,.04)">
+      <div style="font-size:12px;color:#b59aa5;font-weight:600;letter-spacing:.06em">蹲守提醒</div>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:12px">
+        <div style="flex:1"><div style="font-size:14px;font-weight:600;color:#3d2f33">{{ subTitle }}</div><div style="font-size:11.5px;color:#a58a94;margin-top:3px;line-height:1.55">{{ subDesc }}</div></div>
+        <div onClick="{{ subscribe }}" style="flex:none;font-size:12px;font-weight:600;color:#fff;background:linear-gradient(135deg,#e78aa4,#c4526e);border-radius:13px;padding:7px 13px;cursor:pointer">{{ subBtn }}</div>
+      </div>
+      <div style="margin-top:12px;font-size:11px;color:#c0a8b2;line-height:1.6;background:#fdf7f9;border-radius:12px;padding:9px 12px">小提示:授权时勾选「总是保持以上选择」,以后就不用每次点啦</div>
+    </div>
+    <div style="background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 4px 16px rgba(61,47,51,.04)">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid #f7eef1"><span style="font-size:13.5px;color:#3d2f33">关于 IdolRadar</span><span style="font-size:12px;color:#c0a8b2">v0.1.0 ›</span></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px"><span style="font-size:13.5px;color:#3d2f33">动态来源说明</span><span style="font-size:12px;color:#c0a8b2">RSS 订阅源 ›</span></div>
+    </div>
+    <div style="text-align:center;font-size:11px;color:#cbb5be;padding-top:2px">追星是双向奔赴的浪漫 ♡</div>
+  </div>
+  </sc-if>
+
+  <!-- 半隐藏式导航按钮 -->
+  <div style="position:absolute;right:0;bottom:110px;display:flex;flex-direction:column;align-items:flex-end;gap:10px;z-index:10">
+    <sc-if value="{{ menuOpen }}" hint-placeholder-val="{{ false }}">
+      <div onClick="{{ goRadar }}" style="display:flex;align-items:center;gap:7px;background:{{ radarBtnBg }};color:{{ radarBtnColor }};border-radius:18px 0 0 18px;padding:10px 16px 10px 14px;font-size:12.5px;font-weight:600;box-shadow:0 4px 14px rgba(196,82,110,.18);cursor:pointer;animation:floatin .25s ease">动态</div>
+      <div onClick="{{ goPick }}" style="display:flex;align-items:center;gap:7px;background:{{ pickBtnBg }};color:{{ pickBtnColor }};border-radius:18px 0 0 18px;padding:10px 16px 10px 14px;font-size:12.5px;font-weight:600;box-shadow:0 4px 14px rgba(196,82,110,.18);cursor:pointer;animation:floatin .3s ease">选 idol</div>
+      <div onClick="{{ goMe }}" style="display:flex;align-items:center;gap:7px;background:{{ meBtnBg }};color:{{ meBtnColor }};border-radius:18px 0 0 18px;padding:10px 16px 10px 14px;font-size:12.5px;font-weight:600;box-shadow:0 4px 14px rgba(196,82,110,.18);cursor:pointer;animation:floatin .35s ease">我的</div>
+    </sc-if>
+    <div onClick="{{ toggleMenu }}" style="width:46px;height:46px;margin-right:-14px;border-radius:50%;background:linear-gradient(135deg,#e78aa4,#c4526e);box-shadow:0 5px 16px rgba(196,82,110,.3);display:flex;align-items:center;justify-content:center;color:#fff;font-size:17px;cursor:pointer">{{ menuIcon }}</div>
+  </div>
+
+  <!-- toast -->
+  <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;left:50%;bottom:150px;transform:translateX(-50%);background:rgba(61,47,51,.88);color:#fff;font-size:12.5px;border-radius:14px;padding:9px 18px;z-index:20;animation:floatin .25s ease;white-space:nowrap">{{ toast }}</div>
+  </sc-if>
+  <div style="display:flex;justify-content:center;padding:8px 0 10px"><div style="width:130px;height:5px;border-radius:3px;background:rgba(61,47,51,.18)"></div></div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:390,&quot;height&quot;:844},&quot;showPushBanner&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;雷达页&quot;}}">
+class Component extends DCLogic {
+  state = {
+    screen: 'radar', menuOpen: false, toast: '', query: '',
+    subscribed: false, currentIdol: 0, copied: false,
+  };
+  idolData = [
+    { name: '苏念', initial: '念', bio: '女团 C 位出身,solo 歌手 · 新专辑筹备中', sources: 4, grad: 'linear-gradient(140deg,#e89bb0,#b79ade)' },
+    { name: '林晚', initial: '晚', bio: '演员 · 待播剧《春潮》女主 · 平面模特出道', sources: 3, grad: 'linear-gradient(140deg,#a3b8e8,#8ecfc4)' },
+    { name: '江祈', initial: '祈', bio: '唱作人 · 每周五直播弹唱 · 猫奴一枚', sources: 5, grad: 'linear-gradient(140deg,#efb78d,#e08fae)' },
+    { name: '許星野', initial: '星', bio: '主持人/综艺常驻 · 每天都在营业的快乐源泉', sources: 2, grad: 'linear-gradient(140deg,#b79ade,#7fb6e0)' },
+  ];
+  channels = { '微博': ['#c4526e', '#fdf0f3'], 'ins': ['#8f7fa8', '#f1ecfa'], 'B站': ['#4d8fb8', '#eaf3fa'], '行程': ['#4f9e7a', '#eaf6f0'] };
+  showToast(msg) {
+    this.setState({ toast: msg });
+    clearTimeout(this._tt);
+    this._tt = setTimeout(() => this.setState({ toast: '' }), 1800);
+  }
+  renderVals() {
+    const s = this.state;
+    const idol = this.idolData[s.currentIdol];
+    const go = (screen) => () => this.setState({ screen, menuOpen: false });
+    const feedRaw = [
+      { channel: 'ins', time: '2 小时前', title: '更新了 3 张自拍', summary: '配文:今天的天空和新发色很配。评论区已经排到 999+ 了,宝们冲。' },
+      { channel: 'B站', time: '5 小时前', title: '发布新视频《录音室日常 vlog·07》', summary: '12 分钟幕后花絮,包含新歌 demo 试听片段,建议戴耳机反复循环。' },
+      { channel: '行程', time: '昨天 20:14', title: '官宣加盟周六晚音乐现场', summary: '本周六 19:30 直播舞台,曲目保密。蹲守小分队请定好闹钟。' },
+      { channel: '微博', time: '昨天 11:02', title: '转发了品牌合作预告', summary: '配字「周三见」。评论区网友已就位:这次是彩妆线还是香氛线?' },
+      { channel: 'ins', time: '前天 22:40', title: '限时动态:排练室镜面自拍', summary: '穿了打歌服,大概率在准备新舞台。截图已存,搬运在路上。' },
+    ];
+    const feed = feedRaw.map(p => { const c = this.channels[p.channel]; return { ...p, tagColor: c[0], tagBg: c[1] }; });
+    const idols = this.idolData.map((it, i) => {
+      const cur = i === s.currentIdol;
+      return {
+        ...it, current: cur,
+        border: cur ? '#f0c3d0' : 'transparent',
+        btnLabel: cur ? '守护中' : '换成她',
+        btnColor: cur ? '#c0a8b2' : '#fff',
+        btnBg: cur ? '#f7f0f3' : 'linear-gradient(135deg,#e78aa4,#c4526e)',
+        pick: () => {
+          if (cur) return;
+          this.setState({ currentIdol: i, screen: 'radar' });
+          this.showToast('换好啦,开始蹲 ' + it.name + ' ♡');
+        },
+      };
+    }).filter(it => !s.query || it.name.includes(s.query) || it.bio.includes(s.query));
+    const navBtn = (active) => active
+      ? { bg: 'linear-gradient(135deg,#e78aa4,#c4526e)', color: '#fff' }
+      : { bg: 'rgba(255,255,255,.94)', color: '#8a7580' };
+    const rb = navBtn(s.screen === 'radar'), pb = navBtn(s.screen === 'pick'), mb = navBtn(s.screen === 'me');
+    return {
+      isRadar: s.screen === 'radar', isPick: s.screen === 'pick', isMe: s.screen === 'me',
+      navTitle: { radar: 'IdolRadar', pick: '选择守护对象', me: '我的' }[s.screen],
+      idolName: idol.name, idolInitial: idol.initial, sourceCount: idol.sources,
+      lastUpdate: '18 分钟前', todayCount: 3,
+      topPost: { channel: '微博', time: '18 分钟前', title: '她发新微博啦:「收工!今天也是元气满满的一天」', summary: '附了两张收工照,眼里有光的程度……姐妹们快去控评,顺便把词条带起来。' },
+      feed, idols, query: s.query,
+      onSearch: (e) => this.setState({ query: e.target.value }),
+      showPushBanner: !s.subscribed && (this.props.showPushBanner ?? true),
+      subscribe: () => { this.setState({ subscribed: true }); this.showToast('蹲守提醒已开启 ✿'); },
+      subTitle: s.subscribed ? '提醒已开启' : '提醒未开启',
+      subDesc: s.subscribed ? '她有新动态时,会通过微信订阅消息叫你' : '开启后她一营业,微信马上通知你',
+      subBtn: s.subscribed ? '再充一次' : '去开启',
+      copyLabel: s.copied ? '已复制 ✓' : '⌁ 复制原文链接',
+      copyLink: () => { this.setState({ copied: true }); this.showToast('链接已复制,去原站看她'); setTimeout(() => this.setState({ copied: false }), 2000); },
+      menuOpen: s.menuOpen, menuIcon: s.menuOpen ? '×' : '❀',
+      toggleMenu: () => this.setState({ menuOpen: !s.menuOpen }),
+      goRadar: go('radar'), goPick: go('pick'), goMe: go('me'),
+      radarBtnBg: rb.bg, radarBtnColor: rb.color, pickBtnBg: pb.bg, pickBtnColor: pb.color, meBtnBg: mb.bg, meBtnColor: mb.color,
+      toast: s.toast,
+    };
+  }
+}
+</script>
+</body>
+</html>
