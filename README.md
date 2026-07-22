@@ -30,7 +30,9 @@
 
 ## 文档
 
-- [功能设计文档（MVP）](docs/superpowers/specs/2026-07-22-idolradar-mvp-design.md)
+- [功能设计文档（MVP）](docs/MVP-功能设计.md)
+- [产品需求文档 PRD（MVP）](docs/MVP-产品需求PRD.md)
+- [测试用例文档（MVP）](docs/MVP-测试用例.md)
 
 ## 路线图
 
