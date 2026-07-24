@@ -1,0 +1,90 @@
+# 生产文件不启动 PostgreSQL/Redis，只连接托管或独立基础设施；所有敏感项必须显式传入。
+x-runtime-environment: &runtime-environment
+  SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:?required}
+  SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:?required}
+  SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:?required}
+  SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${DATABASE_POOL_SIZE:-20}
+  SPRING_DATA_REDIS_HOST: ${REDIS_HOST:?required}
+  SPRING_DATA_REDIS_PORT: ${REDIS_PORT:-6379}
+  SPRING_DATA_REDIS_USERNAME: ${REDIS_USERNAME:-default}
+  SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:?required}
+  SPRING_DATA_REDIS_SSL_ENABLED: "true"
+  SPRING_DATA_REDIS_CONNECT_TIMEOUT: 2s
+  SPRING_DATA_REDIS_TIMEOUT: 2s
+  IDOLRADAR_WECHAT_APP_ID: ${WECHAT_APP_ID:?required}
+  IDOLRADAR_WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:?required}
+  IDOLRADAR_WECHAT_API_BASE_URL: https://api.weixin.qq.com
+  IDOLRADAR_SUBSCRIBE_TEMPLATE_ID: ${SUBSCRIBE_TEMPLATE_ID:?required}
+  IDOLRADAR_SESSION_TTL: ${SESSION_TTL:-30d}
+  IDOLRADAR_RATE_LIMIT_IP_LIMIT: ${RATE_LIMIT_IP:-1200}
+  IDOLRADAR_RATE_LIMIT_DEFAULT_LIMIT: ${RATE_LIMIT_USER:-120}
+  IDOLRADAR_RATE_LIMIT_LOGIN_LIMIT: ${RATE_LIMIT_LOGIN:-20}
+  IDOLRADAR_RATE_LIMIT_SUBSCRIPTION_LIMIT: ${RATE_LIMIT_SUBSCRIPTION:-12}
+  IDOLRADAR_WORKER_WECHAT_APP_ID: ${WECHAT_APP_ID:?required}
+  IDOLRADAR_WORKER_WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:?required}
+  IDOLRADAR_WORKER_WECHAT_API_BASE_URL: https://api.weixin.qq.com
+  IDOLRADAR_WORKER_SUBSCRIBE_TEMPLATE_ID: ${SUBSCRIBE_TEMPLATE_ID:?required}
+  IDOLRADAR_WORKER_MINIPROGRAM_STATE: formal
+  IDOLRADAR_WORKER_RSS_TIMEOUT: ${RSS_TIMEOUT:-10s}
+  IDOLRADAR_WORKER_RSS_MAX_RESPONSE_BYTES: ${RSS_MAX_RESPONSE_BYTES:-2097152}
+  IDOLRADAR_WORKER_RSS_MAX_REDIRECTS: ${RSS_MAX_REDIRECTS:-3}
+  IDOLRADAR_WORKER_RSS_MAX_ENTRIES_PER_SOURCE: ${RSS_MAX_ENTRIES_PER_SOURCE:-100}
+  IDOLRADAR_WORKER_RSS_SOURCE_CONCURRENCY: ${RSS_SOURCE_CONCURRENCY:-4}
+  IDOLRADAR_WORKER_NOTIFICATION_CONCURRENCY: ${NOTIFY_CONCURRENCY:-8}
+  IDOLRADAR_WORKER_NOTIFICATION_LEASE: ${NOTIFICATION_LEASE:-15m}
+  IDOLRADAR_WORKER_NOTIFICATION_MAX_ATTEMPTS: ${NOTIFICATION_MAX_ATTEMPTS:-5}
+  IDOLRADAR_WORKER_NOTIFICATION_RETRY_BASE: ${NOTIFICATION_RETRY_BASE:-1m}
+  SPRING_FLYWAY_ENABLED: "false"
+  LOGGING_LEVEL_ROOT: ${LOG_LEVEL:-INFO}
+
+x-hardened: &hardened
+  image: ${IDOLRADAR_IMAGE:?required}
+  user: "10001:10001"
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m,noexec,nosuid
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  migrate:
+    <<: *hardened
+    environment:
+      # 独立 DDL 账号只供发布阶段迁移；业务实例使用权限更小的运行账号。
+      APP_MODE: migrate
+      SPRING_FLYWAY_ENABLED: "true"
+      SPRING_DATASOURCE_URL: ${MIGRATION_DATASOURCE_URL:?required}
+      SPRING_DATASOURCE_USERNAME: ${MIGRATION_DATASOURCE_USERNAME:?required}
+      SPRING_DATASOURCE_PASSWORD: ${MIGRATION_DATASOURCE_PASSWORD:?required}
+    restart: "no"
+
+  app:
+    <<: *hardened
+    environment:
+      <<: *runtime-environment
+      APP_MODE: api
+      # 显式禁用 Flyway 自动迁移；DDL 权限另由生产数据库运行账号隔离。
+      SPRING_FLYWAY_ENABLED: "false"
+      SERVER_PORT: 8080
+      SERVER_FORWARD_HEADERS_STRATEGY: framework
+    expose:
+      - "8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/readyz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  fetch-feeds:
+    <<: *hardened
+    profiles: ["jobs"]
+    environment:
+      <<: *runtime-environment
+      APP_MODE: worker
+      # Worker 只处理业务数据；数据库结构由 migrate 服务提前完成。
+      SPRING_FLYWAY_ENABLED: "false"
+    restart: "no"

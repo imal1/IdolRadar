@@ -1,4 +1,7 @@
 .DS_Store
+.idea/
+**/.idea/
+*.iml
 .env
 .env.*
 !.env.example
@@ -7,5 +10,16 @@ coverage/
 graphify-out/
 node_modules/
 **/node_modules/
+**/target/
+/backend/maven-settings.xml
 project.private.config.json
 npm-debug.log*
+*.jar
+*.log
+*.pid
+*.key
+*.pem
+*.pfx
+*.p12
+*.jks
+*.keystore

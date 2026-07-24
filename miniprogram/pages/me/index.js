@@ -39,6 +39,7 @@ function guardDays(home, user) {
   if (!started) {
     return 1;
   }
+  // 选择当天计作第 1 天；异常未来时间也不向用户展示 0 或负数。
   return Math.max(1, Math.floor((Date.now() - started.getTime()) / 86400000) + 1);
 }
 

@@ -1,32 +1,14 @@
-var config = require('./config/env');
 var api = require('./utils/api');
 
-function login() {
-  return new Promise(function (resolve, reject) {
-    wx.login({ success: resolve, fail: reject });
-  });
-}
-
+// 全局只缓存“登录后初始化数据”；页面业务数据仍在 onShow/loadData 时刷新。
 App({
   globalData: {
     bootstrap: null,
-    bootstrapPromise: null
+    bootstrapPromise: null,
+    bootstrapGeneration: 0
   },
 
   onLaunch: function () {
-    if (!wx.cloud) {
-      console.error('当前微信基础库不支持云开发');
-      return;
-    }
-
-    var cloudOptions = { traceUser: true };
-    if (config.cloudEnvId) {
-      cloudOptions.env = config.cloudEnvId;
-    } else if (wx.cloud.DYNAMIC_CURRENT_ENV) {
-      cloudOptions.env = wx.cloud.DYNAMIC_CURRENT_ENV;
-    }
-    wx.cloud.init(cloudOptions);
-
     this.ensureBootstrap().catch(function (error) {
       console.error('Silent bootstrap failed:', error);
     });
@@ -35,6 +17,7 @@ App({
   ensureBootstrap: function (options) {
     options = options || {};
     if (options.force) {
+      this.globalData.bootstrapGeneration += 1;
       this.globalData.bootstrap = null;
       this.globalData.bootstrapPromise = null;
     }
@@ -42,23 +25,39 @@ App({
       return Promise.resolve(this.globalData.bootstrap);
     }
     if (this.globalData.bootstrapPromise) {
+      // 多个页面同时启动时复用同一请求，避免重复 wx.login 和初始化接口。
       return this.globalData.bootstrapPromise;
     }
 
     var app = this;
-    this.globalData.bootstrapPromise = login().then(function () {
-      return api.callUser('bootstrap');
-    }).then(function (data) {
-      app.globalData.bootstrap = data || {};
-      return app.globalData.bootstrap;
-    }).catch(function (error) {
-      app.globalData.bootstrapPromise = null;
+    var generation = this.globalData.bootstrapGeneration;
+    var bootstrapPromise = api.callUser('bootstrap').then(function (data) {
+      var bootstrap = data || {};
+      // force 刷新会递增 generation；旧请求晚返回时不得覆盖新状态。
+      if (
+        app.globalData.bootstrapGeneration === generation &&
+        app.globalData.bootstrapPromise === bootstrapPromise
+      ) {
+        app.globalData.bootstrap = bootstrap;
+        app.globalData.bootstrapPromise = null;
+      }
+      return bootstrap;
+    }, function (error) {
+      if (
+        app.globalData.bootstrapGeneration === generation &&
+        app.globalData.bootstrapPromise === bootstrapPromise
+      ) {
+        app.globalData.bootstrapPromise = null;
+      }
       throw error;
     });
-    return this.globalData.bootstrapPromise;
+    this.globalData.bootstrapPromise = bootstrapPromise;
+    return bootstrapPromise;
   },
 
   invalidateBootstrap: function () {
+    // 更换守护对象后废弃缓存，也让仍在飞行中的旧请求失去写入资格。
+    this.globalData.bootstrapGeneration += 1;
     this.globalData.bootstrap = null;
     this.globalData.bootstrapPromise = null;
   }

@@ -1,0 +1,149 @@
+# 本文件仅用于本机开发：数据库/Redis 只绑定 127.0.0.1，默认密码不得用于生产。
+x-database-environment: &database-environment
+  SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-idolradar}
+  SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-idolradar}
+  SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-idolradar}
+  SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${DATABASE_POOL_SIZE:-10}
+
+x-runtime-environment: &runtime-environment
+  <<: *database-environment
+  SPRING_DATA_REDIS_HOST: redis
+  SPRING_DATA_REDIS_PORT: 6379
+  SPRING_DATA_REDIS_USERNAME: ${REDIS_USERNAME:-}
+  SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-idolradar}
+  SPRING_DATA_REDIS_SSL_ENABLED: ${REDIS_SSL_ENABLED:-false}
+  SPRING_DATA_REDIS_CONNECT_TIMEOUT: 2s
+  SPRING_DATA_REDIS_TIMEOUT: 2s
+  IDOLRADAR_WECHAT_APP_ID: ${WECHAT_APP_ID:-}
+  IDOLRADAR_WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:-}
+  IDOLRADAR_WECHAT_API_BASE_URL: ${WECHAT_API_BASE_URL:-https://api.weixin.qq.com}
+  IDOLRADAR_SUBSCRIBE_TEMPLATE_ID: ${SUBSCRIBE_TEMPLATE_ID:-}
+  IDOLRADAR_SESSION_TTL: ${SESSION_TTL:-30d}
+  IDOLRADAR_RATE_LIMIT_IP_LIMIT: ${RATE_LIMIT_IP:-1200}
+  IDOLRADAR_RATE_LIMIT_DEFAULT_LIMIT: ${RATE_LIMIT_USER:-120}
+  IDOLRADAR_RATE_LIMIT_LOGIN_LIMIT: ${RATE_LIMIT_LOGIN:-20}
+  IDOLRADAR_RATE_LIMIT_SUBSCRIPTION_LIMIT: ${RATE_LIMIT_SUBSCRIPTION:-12}
+  IDOLRADAR_WORKER_WECHAT_APP_ID: ${WECHAT_APP_ID:-}
+  IDOLRADAR_WORKER_WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:-}
+  IDOLRADAR_WORKER_WECHAT_API_BASE_URL: ${WECHAT_API_BASE_URL:-https://api.weixin.qq.com}
+  IDOLRADAR_WORKER_SUBSCRIBE_TEMPLATE_ID: ${SUBSCRIBE_TEMPLATE_ID:-}
+  IDOLRADAR_WORKER_MINIPROGRAM_STATE: ${MINIPROGRAM_STATE:-formal}
+  IDOLRADAR_WORKER_RSS_TIMEOUT: ${RSS_TIMEOUT:-10s}
+  IDOLRADAR_WORKER_RSS_MAX_RESPONSE_BYTES: ${RSS_MAX_RESPONSE_BYTES:-2097152}
+  IDOLRADAR_WORKER_RSS_MAX_REDIRECTS: ${RSS_MAX_REDIRECTS:-3}
+  IDOLRADAR_WORKER_RSS_MAX_ENTRIES_PER_SOURCE: ${RSS_MAX_ENTRIES_PER_SOURCE:-100}
+  IDOLRADAR_WORKER_RSS_SOURCE_CONCURRENCY: ${RSS_SOURCE_CONCURRENCY:-4}
+  IDOLRADAR_WORKER_NOTIFICATION_CONCURRENCY: ${NOTIFY_CONCURRENCY:-8}
+  IDOLRADAR_WORKER_NOTIFICATION_LEASE: ${NOTIFICATION_LEASE:-15m}
+  IDOLRADAR_WORKER_NOTIFICATION_MAX_ATTEMPTS: ${NOTIFICATION_MAX_ATTEMPTS:-5}
+  IDOLRADAR_WORKER_NOTIFICATION_RETRY_BASE: ${NOTIFICATION_RETRY_BASE:-1m}
+  LOGGING_LEVEL_ROOT: ${LOG_LEVEL:-INFO}
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-idolradar}
+      POSTGRES_USER: ${POSTGRES_USER:-idolradar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-idolradar}
+    volumes:
+      - postgres-java-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-idolradar}
+    # Redis 必须启用认证；服务器部署时由 .env 注入独立强密码。
+    command: ["sh", "-c", "exec redis-server --appendonly yes --maxmemory-policy noeviction --requirepass \"$$REDIS_PASSWORD\""]
+    volumes:
+      - redis-data:/data
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$${REDIS_PASSWORD} redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  migrate:
+    build: .
+    environment:
+      <<: *database-environment
+      APP_MODE: migrate
+      # Flyway 只在一次性迁移容器启用；API/Worker 无 DDL 职责。
+      SPRING_FLYWAY_ENABLED: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  seed:
+    build: .
+    profiles: ["tools"]
+    environment:
+      <<: *database-environment
+      APP_MODE: seed
+      SPRING_FLYWAY_ENABLED: "false"
+      IDOLRADAR_SEED_DIRECTORY: /app/database
+    volumes:
+      - ./database:/app/database:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
+  fetch-feeds:
+    build: .
+    # Worker 是外部调度的一次性任务；--profile jobs 可在本机手动运行。
+    profiles: ["jobs"]
+    environment:
+      <<: *runtime-environment
+      APP_MODE: worker
+      SPRING_FLYWAY_ENABLED: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      <<: *runtime-environment
+      APP_MODE: api
+      SPRING_FLYWAY_ENABLED: "false"
+      SERVER_PORT: 8080
+      SERVER_FORWARD_HEADERS_STRATEGY: framework
+    ports:
+      - "127.0.0.1:${APP_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/readyz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+volumes:
+  postgres-java-data:
+  redis-data:

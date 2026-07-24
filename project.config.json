@@ -1,7 +1,6 @@
 {
   "description": "IdolRadar 微信小程序",
   "miniprogramRoot": "miniprogram/",
-  "cloudfunctionRoot": "cloudfunctions/",
   "compileType": "miniprogram",
   "appid": "wxa04d57df55d8473d",
   "projectname": "IdolRadar",

@@ -7,7 +7,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const root = path.resolve(__dirname, '..');
-const roots = ['miniprogram', 'cloudfunctions', 'scripts', 'tests'];
+const roots = ['miniprogram', 'scripts', 'tests'];
 const files = [];
 
 function collect(directory) {

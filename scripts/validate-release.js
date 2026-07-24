@@ -3,6 +3,7 @@
 'use strict';
 
 const fs = require('node:fs');
+const net = require('node:net');
 const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
@@ -12,19 +13,11 @@ if (seedDirFlag >= 0 && !process.argv[seedDirFlag + 1]) {
   console.error('ERROR --seed-dir 后必须提供目录路径');
   process.exit(1);
 }
-const seedDir = seedDirFlag >= 0 && process.argv[seedDirFlag + 1]
+const seedDir = seedDirFlag >= 0
   ? path.resolve(process.argv[seedDirFlag + 1])
   : path.join(root, 'database');
 const errors = [];
 const warnings = [];
-const dotenv = loadDotenv();
-let cloudbaseEnvId = null;
-let serverTemplateId = null;
-const fetchTriggerContract = {
-  name: 'fetchFeedsEvery30Minutes',
-  type: 'timer',
-  config: '0 */30 * * * * *'
-};
 
 function relative(filePath) {
   return path.relative(root, filePath) || '.';
@@ -32,6 +25,11 @@ function relative(filePath) {
 
 function addError(message) {
   errors.push(message);
+}
+
+function placeholder(message) {
+  if (allowPlaceholders) warnings.push(message);
+  else addError(message);
 }
 
 function requireFile(filePath) {
@@ -61,7 +59,6 @@ function parseJsonLines(filePath) {
     addError(`${relative(filePath)} 无法读取：${error.message}`);
     return records;
   }
-
   lines.forEach((line, index) => {
     if (!line.trim()) return;
     try {
@@ -74,9 +71,18 @@ function parseJsonLines(filePath) {
       addError(`${relative(filePath)}:${index + 1} 不是合法 JSON Lines：${error.message}`);
     }
   });
-
   if (records.length === 0) addError(`${relative(filePath)} 不含任何记录`);
   return records;
+}
+
+function walkJson(directory) {
+  if (!fs.existsSync(directory)) return;
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    if (['node_modules', '.git', 'graphify-out'].includes(entry.name)) continue;
+    const filePath = path.join(directory, entry.name);
+    if (entry.isDirectory()) walkJson(filePath);
+    else if (entry.isFile() && entry.name.endsWith('.json')) parseJson(filePath);
+  }
 }
 
 function loadDotenv() {
@@ -89,44 +95,49 @@ function loadDotenv() {
       if (!match) continue;
       let value = match[2];
       if ((value.startsWith('"') && value.endsWith('"'))
-        || (value.startsWith("'") && value.endsWith("'"))) {
-        value = value.slice(1, -1);
-      }
+        || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1);
       values[match[1]] = value;
     }
   }
   return values;
 }
 
-function resolveDynamic(value) {
-  if (typeof value !== 'string') return value;
-  return value.replace(/\{\{env\.([A-Za-z_][A-Za-z0-9_]*)\}\}/g, (token, name) => (
-    process.env[name] || dotenv[name] || token
-  ));
-}
-
-function walkJson(directory) {
-  if (!fs.existsSync(directory)) return;
-
-  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-    if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === 'graphify-out') {
-      continue;
-    }
-
-    const filePath = path.join(directory, entry.name);
-    if (entry.isDirectory()) walkJson(filePath);
-    else if (entry.isFile() && entry.name.endsWith('.json')) parseJson(filePath);
+function environmentValue(environment, names) {
+  for (const name of names) {
+    const value = environment[name];
+    if (typeof value === 'string' && value.trim()) return value.trim();
   }
+  return '';
 }
 
-function placeholder(message) {
-  if (allowPlaceholders) warnings.push(message);
-  else addError(message);
+function isPrivateApiHostname(hostname) {
+  const normalized = hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  if (net.isIP(normalized)) return true;
+  if (!normalized.includes('.')) return true;
+  const reserved = [
+    'localhost', 'example.com', 'example.net', 'example.org',
+    'invalid', 'test', 'example'
+  ];
+  if (reserved.some((name) => normalized === name || normalized.endsWith(`.${name}`))) return true;
+  return ['.local', '.lan', '.home', '.internal']
+    .some((suffix) => normalized === suffix.slice(1) || normalized.endsWith(suffix));
+}
+
+function inspectApiBaseUrl(value) {
+  const url = new URL(value);
+  const originOnly = !url.username
+    && !url.password
+    && url.pathname === '/'
+    && !url.search
+    && !url.hash;
+  const supportedProtocol = url.protocol === 'http:' || url.protocol === 'https:';
+  const productionReady = url.protocol === 'https:' && !isPrivateApiHostname(url.hostname);
+  return { originOnly, productionReady, supportedProtocol, url };
 }
 
 function isPlaceholder(value) {
   if (typeof value !== 'string') return true;
-  const normalized = resolveDynamic(value).trim().toLowerCase();
+  const normalized = value.trim().toLowerCase();
   return !normalized
     || normalized === 'touristappid'
     || normalized.includes('example.invalid')
@@ -134,171 +145,279 @@ function isPlaceholder(value) {
     || normalized.includes('replace_me')
     || normalized.includes('replace-with')
     || normalized.includes('replace_with')
-    || normalized.includes('请替换')
-    || normalized.includes('{{env.')
-    || /^cloud1-placeholder/.test(normalized);
+    || normalized.includes('请替换');
 }
 
 const requiredFiles = [
   'package.json',
+  'package-lock.json',
+  '.env.example',
+  'Dockerfile',
+  'compose.yaml',
+  'compose.prod.yaml',
   'project.config.json',
-  'cloudbaserc.json',
   'miniprogram/app.js',
   'miniprogram/app.json',
   'miniprogram/app.wxss',
-  'miniprogram/sitemap.json',
   'miniprogram/config/env.js',
+  'miniprogram/utils/api.js',
+  'backend/pom.xml',
+  'backend/src/main/java/com/idolradar/IdolRadarApplication.java',
+  'backend/src/main/java/com/idolradar/web/ApiController.java',
+  'backend/src/main/java/com/idolradar/auth/AuthService.java',
+  'backend/src/main/java/com/idolradar/worker/WorkerService.java',
+  'backend/src/main/java/com/idolradar/web/PreAuthRateLimitInterceptor.java',
+  'backend/src/main/resources/application.yml',
+  'backend/src/main/resources/db/migration/V1__init.sql',
+  'backend/src/main/resources/db/migration/V2__notification_delivery_state.sql',
+  'backend/src/main/resources/db/migration/V3__notification_outbox.sql',
   'database/idols.seed.jsonl',
-  'database/sources.seed.jsonl',
-  'database/indexes.json',
-  'database/security-rules.json',
-  'database/function-security-rules.json',
-  'cloudfunctions/user/index.js',
-  'cloudfunctions/user/package.json',
-  'cloudfunctions/user/package-lock.json',
-  'cloudfunctions/sendNotify/index.js',
-  'cloudfunctions/sendNotify/package.json',
-  'cloudfunctions/sendNotify/package-lock.json',
-  'cloudfunctions/sendNotify/config.json',
-  'cloudfunctions/fetchFeeds/index.js',
-  'cloudfunctions/fetchFeeds/package.json',
-  'cloudfunctions/fetchFeeds/package-lock.json',
-  'cloudfunctions/fetchFeeds/config.json'
+  'database/sources.seed.jsonl'
 ];
-
 for (const filePath of requiredFiles) requireFile(filePath);
 walkJson(root);
 
+const packagePath = path.join(root, 'package.json');
+if (fs.existsSync(packagePath)) {
+  const packageJson = parseJson(packagePath);
+  if (packageJson) {
+    if (Object.keys(packageJson.dependencies || {}).length > 0) {
+      addError('package.json: 不得包含 Node.js 生产后端依赖');
+    }
+    if (!/^>=24(?:\.0\.0)?$/.test(packageJson.engines?.node || '')) {
+      addError('package.json: 可选客户端校验工具要求 Node.js >=24.0.0');
+    }
+  }
+}
+
+const outboxMigrationPath = path.join(
+  root,
+  'backend/src/main/resources/db/migration/V3__notification_outbox.sql'
+);
+if (fs.existsSync(outboxMigrationPath)) {
+  const migration = fs.readFileSync(outboxMigrationPath, 'utf8');
+  if (!/CREATE TABLE notification_outbox\b/i.test(migration)
+    || !/status IN \('pending', 'processing', 'retryable', 'completed'\)/i.test(migration)) {
+    addError('V3__notification_outbox.sql: 缺少持久化通知 outbox 或状态约束');
+  }
+}
+
+for (const legacyPath of [
+  'server/src/index.js',
+  'server/src/app.js',
+  'cloudfunctions/fetchFeeds/index.js',
+  'cloudfunctions/sendNotify/index.js',
+  'cloudfunctions/user/index.js',
+  'cloudbaserc.json'
+]) {
+  if (fs.existsSync(path.join(root, legacyPath))) {
+    addError(`仓库仍含旧 Node/CloudBase 后端：${legacyPath}`);
+  }
+}
+
+const pomPath = path.join(root, 'backend/pom.xml');
+if (fs.existsSync(pomPath)) {
+  const pom = fs.readFileSync(pomPath, 'utf8');
+  if (!/<java\.version>21<\/java\.version>/.test(pom)) {
+    addError('backend/pom.xml: Java 版本必须为 21');
+  }
+  for (const artifact of [
+    'spring-boot-starter-webmvc',
+    'spring-boot-starter-jdbc',
+    'spring-boot-starter-data-redis',
+    'spring-boot-starter-flyway',
+    'flyway-database-postgresql',
+    'postgresql',
+    'httpclient5'
+  ]) {
+    if (!pom.includes(`<artifactId>${artifact}</artifactId>`)) {
+      addError(`backend/pom.xml: 缺少依赖 ${artifact}`);
+    }
+  }
+}
+
+let projectAppId = '';
 const projectConfigPath = path.join(root, 'project.config.json');
 if (fs.existsSync(projectConfigPath)) {
   const config = parseJson(projectConfigPath);
-  if (config) {
-    if (isPlaceholder(config.appid)) placeholder('project.config.json: appid 仍是占位值');
-    else if (!/^wx[a-f0-9]{16}$/i.test(config.appid)) {
-      addError('project.config.json: appid 格式无效');
-    }
-    if (config.miniprogramRoot !== 'miniprogram/') {
-      addError('project.config.json: miniprogramRoot 必须为 "miniprogram/"');
-    }
-    if (config.cloudfunctionRoot !== 'cloudfunctions/') {
-      addError('project.config.json: cloudfunctionRoot 必须为 "cloudfunctions/"');
-    }
+  projectAppId = config?.appid || '';
+  if (isPlaceholder(projectAppId)) placeholder('project.config.json: appid 仍是占位值');
+  else if (!/^wx[a-f0-9]{16}$/i.test(projectAppId)) addError('project.config.json: appid 格式无效');
+  if (config?.miniprogramRoot !== 'miniprogram/') {
+    addError('project.config.json: miniprogramRoot 必须为 "miniprogram/"');
   }
 }
 
-const cloudbasePath = path.join(root, 'cloudbaserc.json');
-if (fs.existsSync(cloudbasePath)) {
-  const config = parseJson(cloudbasePath);
-  if (config) {
-    if (config.functionRoot !== './cloudfunctions') {
-      addError('cloudbaserc.json: functionRoot 必须为 "./cloudfunctions"');
-    }
-    const envId = config.envId || config.env || config.environments?.[0]?.envId;
-    cloudbaseEnvId = resolveDynamic(envId);
-    if (isPlaceholder(envId)) placeholder('cloudbaserc.json: 云环境 ID 仍是占位值');
-
-    const functions = Array.isArray(config.functions) ? config.functions : [];
-    const functionsByName = new Map(functions.map((entry) => [entry?.name, entry]));
-    const functionContracts = {
-      user: { timeout: 15, memorySize: 256 },
-      sendNotify: { timeout: 120, memorySize: 256 },
-      fetchFeeds: { timeout: 180, memorySize: 512 }
-    };
-    for (const [functionName, contract] of Object.entries(functionContracts)) {
-      const entry = functionsByName.get(functionName);
-      if (!entry) {
-        addError(`cloudbaserc.json: 缺少 ${functionName} 云函数配置`);
-        continue;
-      }
-      if (entry.runtime !== 'Nodejs20.19') addError(`cloudbaserc.json: ${functionName} runtime 必须为 Nodejs20.19`);
-      if (entry.handler !== 'index.main') addError(`cloudbaserc.json: ${functionName} handler 必须为 index.main`);
-      if (entry.installDependency !== true) addError(`cloudbaserc.json: ${functionName} 必须启用 installDependency`);
-      if (entry.timeout !== contract.timeout) addError(`cloudbaserc.json: ${functionName} timeout 必须为 ${contract.timeout}`);
-      if (entry.memorySize !== contract.memorySize) addError(`cloudbaserc.json: ${functionName} memorySize 必须为 ${contract.memorySize}`);
-    }
-
-    const templateId = functionsByName.get('sendNotify')?.envVariables?.SUBSCRIBE_TEMPLATE_ID;
-    serverTemplateId = resolveDynamic(templateId);
-    if (isPlaceholder(templateId)) {
-      placeholder('cloudbaserc.json: SUBSCRIBE_TEMPLATE_ID 仍是未解析占位值');
-    }
-
-    const triggers = functionsByName.get('fetchFeeds')?.triggers;
-    const timerTriggers = Array.isArray(triggers)
-      ? triggers.filter((trigger) => trigger && trigger.type === 'timer')
-      : [];
-    const trigger = timerTriggers[0];
-    if (timerTriggers.length !== 1
-      || trigger.name !== fetchTriggerContract.name
-      || trigger.config !== fetchTriggerContract.config) {
-      addError('cloudbaserc.json: fetchFeeds timer 名称/周期必须与发布契约一致');
-    }
-  }
-}
-
-const envPath = path.join(root, 'miniprogram/config/env.js');
-if (fs.existsSync(envPath)) {
+let clientConfig = null;
+const clientEnvPath = path.join(root, 'miniprogram/config/env.js');
+if (fs.existsSync(clientEnvPath)) {
   try {
-    delete require.cache[require.resolve(envPath)];
-    const env = require(envPath);
-    if (isPlaceholder(env.cloudEnvId)) placeholder('miniprogram/config/env.js: cloudEnvId 仍是占位值');
-    if (isPlaceholder(env.subscribeTemplateId)) {
+    delete require.cache[require.resolve(clientEnvPath)];
+    clientConfig = require(clientEnvPath);
+    const api = inspectApiBaseUrl(clientConfig.apiBaseUrl);
+    if (!api.supportedProtocol) {
+      addError('miniprogram/config/env.js: apiBaseUrl 只允许 http 或 https');
+    }
+    if (!api.originOnly) {
+      addError('miniprogram/config/env.js: apiBaseUrl 必须只含 origin，不得包含路径、查询、片段或登录凭据');
+    }
+    if (!api.productionReady) {
+      placeholder('miniprogram/config/env.js: apiBaseUrl 生产必须使用非私网、非 IP 的 HTTPS 合法域名');
+    }
+    if (isPlaceholder(clientConfig.subscribeTemplateId)) {
       placeholder('miniprogram/config/env.js: subscribeTemplateId 仍是占位值');
     }
-    if (typeof env.version !== 'string' || !/^\d+\.\d+\.\d+$/.test(env.version)) {
+    if (!/^\d+\.\d+\.\d+$/.test(clientConfig.version || '')) {
       addError('miniprogram/config/env.js: version 必须是 x.y.z');
-    }
-    if (!isPlaceholder(env.cloudEnvId) && !isPlaceholder(cloudbaseEnvId)
-      && env.cloudEnvId !== cloudbaseEnvId) {
-      addError('客户端 cloudEnvId 与 cloudbaserc.json 云环境 ID 不一致');
-    }
-    if (!isPlaceholder(env.subscribeTemplateId) && !isPlaceholder(serverTemplateId)
-      && env.subscribeTemplateId !== serverTemplateId) {
-      addError('客户端 subscribeTemplateId 与服务端 SUBSCRIBE_TEMPLATE_ID 不一致');
     }
   } catch (error) {
     addError(`miniprogram/config/env.js 无法加载：${error.message}`);
   }
 }
 
-const appJsonPath = path.join(root, 'miniprogram/app.json');
-if (fs.existsSync(appJsonPath)) {
-  const app = parseJson(appJsonPath);
-  if (app) {
-    const expectedPages = ['pages/radar/index', 'pages/picker/index', 'pages/me/index'];
-    if (!Array.isArray(app.pages) || JSON.stringify(app.pages) !== JSON.stringify(expectedPages)) {
-      addError(`miniprogram/app.json: pages 必须依次为 ${expectedPages.join(', ')}`);
-    } else {
-      for (const route of app.pages) {
-        for (const extension of ['js', 'json', 'wxml', 'wxss']) {
-          requireFile(`miniprogram/${route}.${extension}`);
-        }
-      }
+const dotenv = { ...loadDotenv(), ...process.env };
+const databaseUrl = environmentValue(dotenv, ['SPRING_DATASOURCE_URL']);
+if (databaseUrl) {
+  if (isPlaceholder(databaseUrl)) placeholder('.env/process: SPRING_DATASOURCE_URL 仍是占位值');
+} else {
+  const splitDatabaseVariables = [
+    ['POSTGRES_DB'],
+    ['POSTGRES_USER'],
+    ['POSTGRES_PASSWORD']
+  ];
+  const missingDatabaseVariables = splitDatabaseVariables
+    .filter((names) => isPlaceholder(environmentValue(dotenv, names)))
+    .map((names) => names.join('/'));
+  if (missingDatabaseVariables.length > 0) {
+    placeholder(`.env/process: 须配置 SPRING_DATASOURCE_URL 或完整 POSTGRES_* 数据库变量；缺少 ${missingDatabaseVariables.join(', ')}`);
+  }
+  const databasePort = environmentValue(dotenv, ['POSTGRES_PORT']);
+  if (databasePort && (!/^\d+$/.test(databasePort)
+    || Number(databasePort) < 1
+    || Number(databasePort) > 65535)) {
+    addError('.env/process: POSTGRES_PORT 必须是 1..65535');
+  }
+}
+for (const name of ['WECHAT_APP_ID', 'WECHAT_APP_SECRET', 'SUBSCRIBE_TEMPLATE_ID']) {
+  if (isPlaceholder(dotenv[name])) placeholder(`.env/process: ${name} 仍是占位值或未配置`);
+}
+if (dotenv.MINIPROGRAM_STATE !== 'formal') {
+  placeholder('.env/process: MINIPROGRAM_STATE 发布必须为 formal');
+}
+if (!isPlaceholder(dotenv.WECHAT_APP_ID) && projectAppId && dotenv.WECHAT_APP_ID !== projectAppId) {
+  addError('.env/process: WECHAT_APP_ID 与 project.config.json appid 不一致');
+}
+if (!isPlaceholder(dotenv.SUBSCRIBE_TEMPLATE_ID)
+  && !isPlaceholder(clientConfig?.subscribeTemplateId)
+  && dotenv.SUBSCRIBE_TEMPLATE_ID !== clientConfig.subscribeTemplateId) {
+  addError('客户端 subscribeTemplateId 与服务端 SUBSCRIBE_TEMPLATE_ID 不一致');
+}
+
+const exampleEnv = fs.existsSync(path.join(root, '.env.example'))
+  ? fs.readFileSync(path.join(root, '.env.example'), 'utf8')
+  : '';
+const exampleHasDatabaseUrl = /^SPRING_DATASOURCE_URL=/m.test(exampleEnv);
+const exampleHasSplitDatabase = [
+  ['POSTGRES_DB'],
+  ['POSTGRES_USER'],
+  ['POSTGRES_PASSWORD']
+].every((names) => names.some((name) => new RegExp(`^${name}=`, 'm').test(exampleEnv)));
+if (!exampleHasDatabaseUrl && !exampleHasSplitDatabase) {
+  addError('.env.example: 须包含 SPRING_DATASOURCE_URL 或完整 POSTGRES_* 数据库变量');
+}
+for (const name of ['WECHAT_APP_ID', 'WECHAT_APP_SECRET', 'SUBSCRIBE_TEMPLATE_ID']) {
+  if (!new RegExp(`^${name}=`, 'm').test(exampleEnv)) addError(`.env.example: 缺少 ${name}`);
+}
+
+const appSource = fs.existsSync(path.join(root, 'miniprogram/app.js'))
+  ? fs.readFileSync(path.join(root, 'miniprogram/app.js'), 'utf8')
+  : '';
+const apiSource = fs.existsSync(path.join(root, 'miniprogram/utils/api.js'))
+  ? fs.readFileSync(path.join(root, 'miniprogram/utils/api.js'), 'utf8')
+  : '';
+if (/wx\.cloud/.test(appSource) || /wx\.cloud/.test(apiSource)) {
+  addError('小程序客户端不得继续依赖 wx.cloud');
+}
+if (!/Authorization/.test(apiSource) || !/wx\.request/.test(apiSource)) {
+  addError('miniprogram/utils/api.js: 必须通过 Bearer token 调用自建 API');
+}
+
+const migrationPath = path.join(root, 'backend/src/main/resources/db/migration/V1__init.sql');
+if (fs.existsSync(migrationPath)) {
+  const migration = fs.readFileSync(migrationPath, 'utf8');
+  for (const table of ['idols', 'sources', 'posts', 'users', 'sessions', 'notification_deliveries']) {
+    if (!new RegExp(`CREATE TABLE ${table}\\b`, 'i').test(migration)) {
+      addError(`V1__init.sql: 缺少 ${table} 表`);
+    }
+  }
+  if (!/PRIMARY KEY \(post_id, user_id\)/i.test(migration)) {
+    addError('V1__init.sql: 缺少推送幂等唯一约束');
+  }
+}
+
+const composePath = path.join(root, 'compose.yaml');
+if (fs.existsSync(composePath)) {
+  const compose = fs.readFileSync(composePath, 'utf8');
+  for (const service of ['postgres:', 'redis:', 'migrate:', 'app:', 'fetch-feeds:']) {
+    if (!compose.includes(service)) addError(`compose.yaml: 缺少 ${service.slice(0, -1)} 服务`);
+  }
+  if (!compose.includes('127.0.0.1:${POSTGRES_PORT:-5432}:5432')) {
+    addError('compose.yaml: PostgreSQL 端口必须仅绑定 127.0.0.1');
+  }
+  if (!compose.includes('127.0.0.1:${REDIS_PORT:-6379}:6379')) {
+    addError('compose.yaml: Redis 端口必须仅绑定 127.0.0.1');
+  }
+  if (/command:\s*\[[^\]]*node/i.test(compose)) {
+    addError('compose.yaml: 生产服务不得执行 Node.js');
+  }
+  for (const name of [
+    'SPRING_DATASOURCE_URL',
+    'SPRING_DATA_REDIS_HOST',
+    'IDOLRADAR_WECHAT_APP_ID',
+    'IDOLRADAR_WECHAT_APP_SECRET',
+    'IDOLRADAR_SUBSCRIBE_TEMPLATE_ID',
+    'IDOLRADAR_WORKER_RSS_TIMEOUT',
+    'IDOLRADAR_WORKER_RSS_MAX_RESPONSE_BYTES',
+    'IDOLRADAR_WORKER_NOTIFICATION_MAX_ATTEMPTS'
+  ]) {
+    if (!new RegExp(`^\\s+${name}:`, 'm').test(compose)) {
+      addError(`compose.yaml: 缺少运行变量 ${name}`);
     }
   }
 }
 
-const triggerPath = path.join(root, 'cloudfunctions/fetchFeeds/config.json');
-if (fs.existsSync(triggerPath)) {
-  const config = parseJson(triggerPath);
-  if (config) {
-    const triggers = Array.isArray(config.triggers) ? config.triggers : [];
-    const trigger = triggers[0];
-    if (triggers.length !== 1
-      || trigger?.name !== fetchTriggerContract.name
-      || trigger?.type !== fetchTriggerContract.type
-      || trigger?.config !== fetchTriggerContract.config) {
-      addError('cloudfunctions/fetchFeeds/config.json: timer 必须与 cloudbaserc.json 唯一契约一致');
-    }
+const dockerfilePath = path.join(root, 'Dockerfile');
+if (fs.existsSync(dockerfilePath)) {
+  const dockerfile = fs.readFileSync(dockerfilePath, 'utf8');
+  if (/^FROM\s+node\b/im.test(dockerfile) || /\bnode\b.*server\//i.test(dockerfile)) {
+    addError('Dockerfile: 生产镜像不得使用 Node.js 后端');
+  }
+  if (!/^USER\s+idolradar\s*$/m.test(dockerfile)) {
+    addError('Dockerfile: 运行阶段必须使用非 root 用户 idolradar');
   }
 }
 
-const notifyConfigPath = path.join(root, 'cloudfunctions/sendNotify/config.json');
-if (fs.existsSync(notifyConfigPath)) {
-  const config = parseJson(notifyConfigPath);
-  const openapi = config?.permissions?.openapi;
-  if (!Array.isArray(openapi) || !openapi.includes('subscribeMessage.send')) {
-    addError('cloudfunctions/sendNotify/config.json: 缺少 subscribeMessage.send 权限');
+const productionComposePath = path.join(root, 'compose.prod.yaml');
+if (fs.existsSync(productionComposePath)) {
+  const productionCompose = fs.readFileSync(productionComposePath, 'utf8');
+  for (const requiredSecret of [
+    'IDOLRADAR_IMAGE',
+    'MIGRATION_DATASOURCE_PASSWORD',
+    'SPRING_DATASOURCE_PASSWORD',
+    'REDIS_PASSWORD',
+    'WECHAT_APP_SECRET',
+    'SUBSCRIBE_TEMPLATE_ID'
+  ]) {
+    if (!productionCompose.includes(`\${${requiredSecret}:?required}`)) {
+      addError(`compose.prod.yaml: ${requiredSecret} 必须为强制注入变量`);
+    }
+  }
+  if (!/SPRING_DATA_REDIS_SSL_ENABLED:\s*"true"/.test(productionCompose)) {
+    addError('compose.prod.yaml: 托管 Redis 必须启用 TLS');
+  }
+  if (!/migrate:[\s\S]*?SPRING_FLYWAY_ENABLED:\s*"true"/.test(productionCompose)
+    || !/app:[\s\S]*?SPRING_FLYWAY_ENABLED:\s*"false"/.test(productionCompose)) {
+    addError('compose.prod.yaml: Flyway 只能由 migrate 服务执行');
   }
 }
 
@@ -309,23 +428,15 @@ if (!fs.existsSync(sourceSeedPath)) addError(`缺少发布种子：${sourceSeedP
 const idols = fs.existsSync(idolSeedPath) ? parseJsonLines(idolSeedPath) : [];
 const sources = fs.existsSync(sourceSeedPath) ? parseJsonLines(sourceSeedPath) : [];
 const idolIds = new Set(idols.map((idol) => idol._id));
-let validateFeedUrl = null;
-try {
-  ({ validateFeedUrl } = require(path.join(root, 'cloudfunctions/fetchFeeds/lib/security.js')));
-} catch (error) {
-  addError(`无法加载 RSS URL 安全校验：${error.message}`);
-}
 if (idolIds.size !== idols.length) addError(`${relative(idolSeedPath)}: _id 必须唯一`);
 if (new Set(sources.map((source) => source._id)).size !== sources.length) {
   addError(`${relative(sourceSeedPath)}: _id 必须唯一`);
 }
-
 for (const idol of idols) {
   if (!idol._id || !idol.name || typeof idol.enabled !== 'boolean') {
     addError(`${relative(idolSeedPath)}: idol 必须包含 _id/name/enabled`);
   }
 }
-
 for (const source of sources) {
   if (!source._id || !source.idolId || !source.rssUrl || !source.channel
     || typeof source.enabled !== 'boolean') {
@@ -335,52 +446,31 @@ for (const source of sources) {
     addError(`${relative(sourceSeedPath)}: ${source._id || '(unknown)'} 的 idolId 无对应 idol`);
   }
   try {
-    const url = validateFeedUrl ? validateFeedUrl(source.rssUrl) : new URL(source.rssUrl);
-    if (url.protocol !== 'https:') addError(`${relative(sourceSeedPath)}: RSS 必须使用 https`);
+    const url = new URL(source.rssUrl);
+    if (url.protocol !== 'https:' || url.username || url.password || isPrivateApiHostname(url.hostname)) {
+      throw new Error('unsafe RSS URL');
+    }
   } catch {
-    addError(`${relative(sourceSeedPath)}: ${source._id || '(unknown)'} 的 rssUrl 不安全或无效`);
+    const message = `${relative(sourceSeedPath)}: ${source._id || '(unknown)'} 的 rssUrl 不安全或无效`;
+    // example.invalid 只允许通过本地占位校验；正式发布时 placeholder() 仍会转成错误。
+    if (isPlaceholder(source.rssUrl)) placeholder(message);
+    else addError(message);
   }
 }
-
 for (const seedPath of [idolSeedPath, sourceSeedPath]) {
-  if (!fs.existsSync(seedPath)) continue;
-  if (/example\.invalid|（示例）|上线前请替换/.test(fs.readFileSync(seedPath, 'utf8'))) {
+  if (fs.existsSync(seedPath)
+    && /example\.invalid|（示例）|上线前请替换/.test(fs.readFileSync(seedPath, 'utf8'))) {
     placeholder(`${relative(seedPath)}: 仍含安全示例数据，上线前必须替换`);
-  }
-}
-
-const databaseRulesPath = path.join(root, 'database/security-rules.json');
-if (fs.existsSync(databaseRulesPath)) {
-  const rules = parseJson(databaseRulesPath);
-  for (const collection of ['idols', 'sources', 'posts', 'users']) {
-    if (rules?.[collection]?.read !== false || rules?.[collection]?.write !== false) {
-      addError(`database/security-rules.json: ${collection} 必须禁止客户端读写`);
-    }
-  }
-}
-
-const functionRulesPath = path.join(root, 'database/function-security-rules.json');
-if (fs.existsSync(functionRulesPath)) {
-  const rules = parseJson(functionRulesPath);
-  if (rules?.['*']?.invoke !== false) {
-    addError('database/function-security-rules.json: 必须用 * 默认禁止客户端调用');
-  }
-  if (rules?.user?.invoke !== "auth.loginType != 'ANONYMOUS' && auth != null") {
-    addError('database/function-security-rules.json: user 必须拒绝匿名身份，仅允许已认证客户端调用');
-  }
-  for (const functionName of ['fetchFeeds', 'sendNotify']) {
-    if (rules?.[functionName]?.invoke !== false) {
-      addError(`database/function-security-rules.json: ${functionName} 必须禁止客户端调用`);
-    }
   }
 }
 
 for (const warning of warnings) console.warn(`WARN ${warning}`);
 for (const error of errors) console.error(`ERROR ${error}`);
-
 if (errors.length > 0) {
   console.error(`\n发布校验失败：${errors.length} 项错误，${warnings.length} 项警告`);
   process.exitCode = 1;
 } else {
   console.log(`发布校验通过：0 项错误，${warnings.length} 项警告`);
 }
+
+module.exports = { inspectApiBaseUrl, isPrivateApiHostname };

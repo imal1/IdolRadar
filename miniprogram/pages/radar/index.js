@@ -60,6 +60,7 @@ function decoratePosts(posts) {
 }
 
 function uniquePosts(posts) {
+  // 首页可能同时返回 latestPost 与 feed.posts；按稳定 ID/链接消除重复卡片。
   var seen = {};
   return posts.filter(function (post, index) {
     var key = post.id || post.link || (post.title + '|' + post.publishedAt + '|' + index);
@@ -136,6 +137,7 @@ Page({
     options = options || {};
     var page = this;
     var app = getApp();
+    // requestId 使“最后发起的请求获胜”，防止下拉刷新与 onShow 并发时旧数据回写。
     var requestId = (this._dataRequestId || 0) + 1;
     this._dataRequestId = requestId;
     if (!options.silent) {
@@ -232,6 +234,7 @@ Page({
     var requestId = this._dataRequestId;
     this.setData({ loadingMore: true });
     return api.callUser('getFeed', { cursor: this.data.nextCursor }).then(function (result) {
+      // 刷新已开始时丢弃旧分页响应，避免把旧游标数据拼到新首页。
       if (page._dataRequestId !== requestId || page.data.refreshing) {
         return null;
       }

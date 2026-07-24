@@ -1,5 +1,6 @@
 var time = require('./time');
 
+// 在网络边界兼容历史字段名，页面组件只消费稳定的 Post 展示模型。
 function text(value) {
   return typeof value === 'string' ? value.trim() : '';
 }

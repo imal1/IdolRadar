@@ -1,0 +1,55 @@
+app:
+  # 同一镜像支持 api、migrate、seed、worker 四种部署任务。
+  mode: ${APP_MODE:api}
+
+idolradar:
+  wechat:
+    # AppID 不是密钥；AppSecret 只允许通过环境变量 IDOLRADAR_WECHAT_APP_SECRET 注入。
+    app-id: ${IDOLRADAR_WECHAT_APP_ID:wxa04d57df55d8473d}
+
+spring:
+  application:
+    name: idolradar-backend
+  threads:
+    virtual:
+      enabled: true
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  datasource:
+    # 本机直接运行 Java 时使用；Docker/生产环境通过 SPRING_DATASOURCE_* 覆盖。
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://127.0.0.1:5432/idolradar_java}
+    username: ${SPRING_DATASOURCE_USERNAME:idolradar}
+    password: ${SPRING_DATASOURCE_PASSWORD:idolradar}
+    hikari:
+      # 虚拟线程不等于无限数据库并发；连接池保持小而有界，保护 PostgreSQL。
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 5000
+      validation-timeout: 3000
+  data:
+    redis:
+      # 本机 Java 连接宿主机 Redis；容器内由 Compose 覆盖为 redis:6379。
+      host: ${SPRING_DATA_REDIS_HOST:127.0.0.1}
+      port: ${SPRING_DATA_REDIS_PORT:16379}
+  flyway:
+    # API/Worker 默认禁止 DDL；仅一次性 migrate 任务通过环境变量显式开启。
+    enabled: false
+    clean-disabled: true
+    validate-migration-naming: true
+  sql:
+    init:
+      mode: never
+
+server:
+  port: 8080
+  shutdown: graceful
+  forward-headers-strategy: none
+  error:
+    include-message: never
+    include-stacktrace: never
+
+logging:
+  level:
+    root: INFO
+  pattern:
+    level: "%5p [${spring.application.name:idolradar-backend},%X{requestId:-}]"

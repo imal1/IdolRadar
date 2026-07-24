@@ -1,3 +1,4 @@
+// 兼容后端迁移期间出现过的字段别名；选定首个“已定义”值而非首个真值。
 function firstDefined() {
   for (var index = 0; index < arguments.length; index += 1) {
     if (arguments[index] !== undefined && arguments[index] !== null) {

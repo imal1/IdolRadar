@@ -28,6 +28,7 @@ function requestSubscription() {
       wx.showToast({ title: '未开启提醒', icon: 'none' });
       return false;
     }
+    // 微信授权成功后再记入服务端额度；拒绝或关闭弹窗不能增加可推送次数。
     return api.callUser('recordSubscription', { accepted: true }).then(function () {
       wx.showToast({ title: '提醒已开启', icon: 'success' });
       return true;

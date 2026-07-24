@@ -93,6 +93,7 @@ Component({
         return;
       }
       this.close();
+      // 三个入口均为顶层页；reLaunch 清理旧页面栈，避免连续切换无限堆栈。
       wx.reLaunch({ url: path });
     }
   }

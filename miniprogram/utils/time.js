@@ -10,6 +10,7 @@ function toDate(value) {
     return new Date(value.getTime());
   }
   if (value && typeof value === 'object') {
+    // 同时接受标准 JSON 日期和旧云数据库时间戳，迁移数据无需页面特殊判断。
     if (value.$date) {
       return toDate(value.$date);
     }
@@ -41,6 +42,7 @@ function formatRelativeTime(input, nowInput) {
 
   var dateDay = startOfDay(date);
   var nowDay = startOfDay(now);
+  // 相对“天”按本地自然日计算，避免跨午夜仍显示“几小时前”。
   var dayDiff = Math.round((nowDay - dateDay) / 86400000);
   var diff = now.getTime() - date.getTime();
 

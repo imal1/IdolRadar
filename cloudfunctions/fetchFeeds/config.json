@@ -1,9 +1,0 @@
-{
-  "triggers": [
-    {
-      "name": "fetchFeedsEvery30Minutes",
-      "type": "timer",
-      "config": "0 */30 * * * * *"
-    }
-  ]
-}

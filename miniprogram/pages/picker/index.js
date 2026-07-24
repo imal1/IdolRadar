@@ -52,6 +52,7 @@ Page({
     var app = getApp();
     this.setData({ loading: true, errorMessage: '' });
 
+    // 初始化用户与候选列表并行读取，最终以服务端 currentIdolId 为准。
     return Promise.all([
       app.ensureBootstrap({ force: true }),
       api.callUser('listIdols')
@@ -121,6 +122,7 @@ Page({
       return idol.id === id;
     })[0];
 
+    // confirmingId/selectingId 同时充当 UI 状态与防重复提交锁。
     if (!selected || id === this.data.currentIdolId || this.data.confirmingId || this.data.selectingId) {
       return;
     }
