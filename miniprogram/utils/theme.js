@@ -18,7 +18,8 @@ function isNight(now) {
   if (theme) {
     return theme === 'dark';
   }
-  // 非小程序环境（如 Node 单测）没有 wx，回退到历史夜间时段规则避免行为中断。
+  // 非小程序环境（如 Node 单测）没有 wx，回退到历史夜间时段规则以兼容既有测试；
+  // 仅保留 `< 6` 判断即可完整覆盖 00:00-05:59（`>= 0` 对 Date.getHours() 恒成立）。
   var current = now instanceof Date ? now : new Date();
   return current.getHours() < 6;
 }
