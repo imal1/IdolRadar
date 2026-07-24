@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<style>
+body{margin:0;background:#efe9e6;font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased}
+a{color:#c4526e;text-decoration:none}a:hover{color:#a83e58}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{0%{transform:translate(-50%,-50%) scale(.5);opacity:.55}80%,100%{transform:translate(-50%,-50%) scale(1.15);opacity:0}}
+@keyframes twinkle{0%,100%{opacity:1;transform:translate(-50%,-50%) scale(1)}50%{opacity:.7;transform:translate(-50%,-50%) scale(.92)}}
+</style>
+</helmet>
+
+<section style="padding:44px 44px 44px;min-width:1240px">
+  <div style="max-width:1180px;margin:0 auto">
+    <div style="display:flex;align-items:baseline;gap:16px;flex-wrap:wrap">
+      <div>
+        <div style="font-size:13px;font-weight:600;letter-spacing:.14em;color:#c4526e;text-transform:uppercase">交付主页 · 方案 2a「暗夜心动雷达」</div>
+        <div style="font-size:30px;font-weight:700;color:#3d2f33;margin-top:8px">全平台图标套件</div>
+      </div>
+      <a href="IdolRadar%20%E5%9B%BE%E6%A0%87-%E5%8E%86%E5%8F%B2%E6%96%B9%E6%A1%88.dc.html" style="margin-left:auto;font-size:13px;font-weight:600;color:#8a7580;border:1px solid #d8c9d0;padding:9px 16px;border-radius:11px">历史方案（记录参考）→</a>
+    </div>
+    <div style="font-size:14px;color:#8a7580;margin-top:12px;line-height:1.6;max-width:680px">同一图形按 iOS / Android / 微信小程序 各自规范切图。下方均为真机渲染尺寸预览。<b style="color:#c4526e">交付原图一律为不带圆角的正方形满幅图</b>，圆角与形状裁切由各平台系统完成。</div>
+
+    <!-- ===================== iOS ===================== -->
+    <div style="margin-top:40px;display:flex;align-items:center;gap:10px">
+      <div style="width:26px;height:26px;border-radius:7px;background:#111;display:flex;align-items:center;justify-content:center;color:#fff;font-size:15px"></div>
+      <div style="font-size:20px;font-weight:700;color:#3d2f33">iOS</div>
+      <div style="font-size:12.5px;color:#8a7580">App Store 1024 · 无透明通道 · sRGB · 满幅方图 · 圆角系统自动生成</div>
+    </div>
+
+    <div style="display:flex;gap:34px;flex-wrap:wrap;align-items:flex-start;margin-top:22px;background:#fff;border-radius:24px;padding:30px 32px;box-shadow:0 8px 24px rgba(61,47,51,.07)">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:12px">
+        <div style="position:relative;width:240px;height:240px;border-radius:22.37%;overflow:hidden;box-shadow:0 16px 40px rgba(61,47,51,.22),inset 0 1.5px 0 rgba(255,255,255,.12)"><dc-import name="IconArt" hint-size="240px,240px" style="position:absolute;inset:0"></dc-import></div>
+        <div style="font-size:13px;font-weight:700;color:#3d2f33">App Store · 1024×1024</div>
+        <div style="font-size:11.5px;color:#a2909a">显示缩放；导出 @1x 1024px 无 alpha</div>
+      </div>
+      <div style="flex:1;min-width:520px">
+        <div style="font-size:12px;font-weight:700;letter-spacing:.1em;color:#8a7580;text-transform:uppercase;margin-bottom:16px">真机尺寸（1:1 像素）</div>
+        <div style="display:flex;flex-wrap:wrap;gap:26px 22px;align-items:flex-end">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:8px"><div style="position:relative;width:180px;height:180px;border-radius:22.37%;overflow:hidden;box-shadow:0 8px 20px rgba(61,47,51,.16)"><dc-import name="IconArt" hint-size="180px,180px" style="position:absolute;inset:0"></dc-import></div><div style="font-size:11px;color:#8a7580">180 · 主屏@3x</div></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:8px"><div style="position:relative;width:120px;height:120px;border-radius:22.37%;overflow:hidden;box-shadow:0 6px 16px rgba(61,47,51,.14)"><dc-import name="IconArt" hint-size="120px,120px" style="position:absolute;inset:0"></dc-import></div><div style="font-size:11px;color:#8a7580">120 · 主屏@2x</div></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:8px"><div style="position:relative;width:87px;height:87px;border-radius:22.37%;overflow:hidden;box-shadow:0 5px 12px rgba(61,47,51,.13)"><dc-import name="IconArt" hint-size="87px,87px" style="position:absolute;inset:0"></dc-import></div><div style="font-size:11px;color:#8a7580">87 · 设置@3x</div></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:8px"><div style="position:relative;width:80px;height:80px;border-radius:22.37%;overflow:hidden;box-shadow:0 5px 12px rgba(61,47,51,.13)"><dc-import name="IconArt" hint-size="80px,80px" style="position:absolute;inset:0"></dc-import></div><div style="font-size:11px;color:#8a7580">80 · 聚焦@2x</div></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:8px"><div style="position:relative;width:60px;height:60px;border-radius:22.37%;overflow:hidden;box-shadow:0 4px 10px rgba(61,47,51,.12)"><dc-import name="IconArt" hint-size="60px,60px" style="position:absolute;inset:0"></dc-import></div><div style="font-size:11px;color:#8a7580">60 · 通知@3x</div></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:8px"><div style="position:relative;width:58px;height:58px;border-radius:22.37%;overflow:hidden;box-shadow:0 4px 10px rgba(61,47,51,.12)"><dc-import name="IconArt" hint-size="58px,58px" style="position:absolute;inset:0"></dc-import></div><div style="font-size:11px;color:#8a7580">58 · 设置@2x</div></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:8px"><div style="position:relative;width:40px;height:40px;border-radius:22.37%;overflow:hidden;box-shadow:0 3px 8px rgba(61,47,51,.12)"><dc-import name="IconArt" hint-size="40px,40px" style="position:absolute;inset:0"></dc-import></div><div style="font-size:11px;color:#8a7580">40 · 通知@2x</div></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:8px"><div style="position:relative;width:29px;height:29px;border-radius:22.37%;overflow:hidden;box-shadow:0 2px 6px rgba(61,47,51,.12)"><dc-import name="IconArt" hint-size="29px,29px" style="position:absolute;inset:0"></dc-import></div><div style="font-size:11px;color:#8a7580">29 · 设置@1x</div></div>
+        </div>
+        <div style="font-size:11.5px;color:#a2909a;margin-top:20px;line-height:1.6">iPad 另需 167 / 152 / 76；导出集合 1024·180·167·152·120·87·80·76·60·58·40·29·20 px。可交由 Xcode Asset Catalog「单一尺寸」自动降采样。</div>
+      </div>
+    </div>
+
+    <!-- ===================== Android ===================== -->
+    <div style="margin-top:44px;display:flex;align-items:center;gap:10px">
+      <div style="width:26px;height:26px;border-radius:7px;background:#3ddc84;display:flex;align-items:center;justify-content:center;color:#0b3d24;font-size:14px;font-weight:800">A</div>
+      <div style="font-size:20px;font-weight:700;color:#3d2f33">Android · 自适应图标</div>
+      <div style="font-size:12.5px;color:#8a7580">108×108dp 画布 · 中心 72dp 安全区 · 前景 / 背景分层 · 形状由厂商 launcher 裁切</div>
+    </div>
+
+    <div style="display:flex;gap:26px;flex-wrap:wrap;margin-top:22px">
+      <div style="background:#fff;border-radius:24px;padding:28px 30px;box-shadow:0 8px 24px rgba(61,47,51,.07)">
+        <div style="font-size:12px;font-weight:700;letter-spacing:.1em;color:#8a7580;text-transform:uppercase;margin-bottom:18px">系统蒙版预览（同一套图）</div>
+        <div style="display:flex;gap:24px;flex-wrap:wrap">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:10px"><div style="position:relative;width:120px;height:120px;border-radius:50%;overflow:hidden;box-shadow:0 6px 16px rgba(61,47,51,.16)"><dc-import name="IconArt" hint-size="120px,120px" style="position:absolute;inset:0"></dc-import></div><div style="font-size:11px;color:#8a7580">圆形 Pixel</div></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:10px"><div style="position:relative;width:120px;height:120px;border-radius:27%;overflow:hidden;box-shadow:0 6px 16px rgba(61,47,51,.16)"><dc-import name="IconArt" hint-size="120px,120px" style="position:absolute;inset:0"></dc-import></div><div style="font-size:11px;color:#8a7580">圆角方 Samsung</div></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:10px"><div style="position:relative;width:120px;height:120px;border-radius:42% 42% 42% 42%/42% 42% 42% 42%;overflow:hidden;box-shadow:0 6px 16px rgba(61,47,51,.16)"><dc-import name="IconArt" hint-size="120px,120px" style="position:absolute;inset:0"></dc-import></div><div style="font-size:11px;color:#8a7580">超椭圆</div></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:10px"><div style="position:relative;width:120px;height:120px;border-radius:50% 50% 50% 8px;overflow:hidden;box-shadow:0 6px 16px rgba(61,47,51,.16)"><dc-import name="IconArt" hint-size="120px,120px" style="position:absolute;inset:0"></dc-import></div><div style="font-size:11px;color:#8a7580">水滴 OneUI</div></div>
+        </div>
+      </div>
+
+      <div style="background:#fff;border-radius:24px;padding:28px 30px;box-shadow:0 8px 24px rgba(61,47,51,.07)">
+        <div style="font-size:12px;font-weight:700;letter-spacing:.1em;color:#8a7580;text-transform:uppercase;margin-bottom:18px">安全区</div>
+        <div style="position:relative;width:150px;height:150px;border-radius:16px;overflow:hidden;background:#f3ecef">
+          <dc-import name="IconArt" hint-size="150px,150px" style="position:absolute;inset:0;opacity:.9"></dc-import>
+          <div style="position:absolute;left:50%;top:50%;width:66.6%;height:66.6%;transform:translate(-50%,-50%);border:2px dashed rgba(255,255,255,.9);border-radius:50%;box-shadow:0 0 0 9999px rgba(30,20,25,.34)"></div>
+          <div style="position:absolute;left:50%;bottom:8px;transform:translateX(-50%);font-size:10px;color:#fff;background:rgba(0,0,0,.4);padding:2px 8px;border-radius:6px;white-space:nowrap">72dp 内保证可见</div>
+        </div>
+        <div style="font-size:11px;color:#a2909a;margin-top:14px;width:150px;line-height:1.55">图案已收在安全区内，任何蒙版都不裁到心。</div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:26px;flex-wrap:wrap;margin-top:26px">
+      <div style="background:#fff;border-radius:24px;padding:28px 30px;box-shadow:0 8px 24px rgba(61,47,51,.07)">
+        <div style="font-size:12px;font-weight:700;letter-spacing:.1em;color:#8a7580;text-transform:uppercase;margin-bottom:18px">分层交付</div>
+        <div style="display:flex;gap:20px;align-items:center">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:9px"><div style="position:relative;width:108px;height:108px;border-radius:16px;overflow:hidden;background:linear-gradient(150deg,#4a3940,#332329 70%,#2a1c22);box-shadow:0 5px 14px rgba(61,47,51,.14)"></div><div style="font-size:11px;color:#8a7580">背景层</div></div>
+          <div style="font-size:22px;color:#c9bcc2">+</div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:9px"><div style="position:relative;width:108px;height:108px;border-radius:16px;overflow:hidden;background:repeating-conic-gradient(#eee 0 25%,#fafafa 0 50%) 0 0/16px 16px;box-shadow:0 5px 14px rgba(61,47,51,.14)"><dc-import name="IconArtFg" hint-size="108px,108px" style="position:absolute;inset:0"></dc-import></div><div style="font-size:11px;color:#8a7580">前景层（透明）</div></div>
+          <div style="font-size:22px;color:#c9bcc2">=</div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:9px"><div style="position:relative;width:108px;height:108px;border-radius:50%;overflow:hidden;box-shadow:0 5px 14px rgba(61,47,51,.18)"><dc-import name="IconArt" hint-size="108px,108px" style="position:absolute;inset:0"></dc-import></div><div style="font-size:11px;color:#8a7580">合成裁切</div></div>
+        </div>
+        <div style="font-size:11.5px;color:#a2909a;margin-top:16px;line-height:1.6">交付 <code style="background:#f3ecef;padding:1px 5px;border-radius:4px">ic_launcher_background</code> 与 <code style="background:#f3ecef;padding:1px 5px;border-radius:4px">ic_launcher_foreground</code> 两张 108dp（@xxxhdpi 432px）PNG/矢量。</div>
+      </div>
+
+      <div style="background:#fff;border-radius:24px;padding:28px 30px;box-shadow:0 8px 24px rgba(61,47,51,.07)">
+        <div style="font-size:12px;font-weight:700;letter-spacing:.1em;color:#8a7580;text-transform:uppercase;margin-bottom:18px">主题图标 (单色) & Play</div>
+        <div style="display:flex;gap:22px;align-items:center">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:9px"><div style="width:96px;height:96px;border-radius:50%;background:#e9dfe4;display:flex;align-items:center;justify-content:center;color:#5a4a52"><div style="width:60px;height:60px"><svg viewBox="0 0 100 100" width="100%" height="100%" fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round"><circle cx="50" cy="50" r="15" opacity="0.5"></circle><circle cx="50" cy="50" r="31" opacity="0.35"></circle><line x1="50" y1="50" x2="76" y2="34"></line><circle cx="50" cy="50" r="3" fill="currentColor" stroke="none"></circle><text x="70" y="33" font-size="20" fill="currentColor" stroke="none" text-anchor="middle" dominant-baseline="central">♥</text></svg></div></div><div style="font-size:11px;color:#8a7580">浅色主题</div></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:9px"><div style="width:96px;height:96px;border-radius:50%;background:#2a1c22;display:flex;align-items:center;justify-content:center;color:#f0d9e1"><div style="width:60px;height:60px"><svg viewBox="0 0 100 100" width="100%" height="100%" fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round"><circle cx="50" cy="50" r="15" opacity="0.5"></circle><circle cx="50" cy="50" r="31" opacity="0.35"></circle><line x1="50" y1="50" x2="76" y2="34"></line><circle cx="50" cy="50" r="3" fill="currentColor" stroke="none"></circle><text x="70" y="33" font-size="20" fill="currentColor" stroke="none" text-anchor="middle" dominant-baseline="central">♥</text></svg></div></div><div style="font-size:11px;color:#8a7580">深色主题</div></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:9px"><div style="position:relative;width:96px;height:96px;border-radius:14px;overflow:hidden;box-shadow:0 5px 14px rgba(61,47,51,.16)"><dc-import name="IconArt" hint-size="96px,96px" style="position:absolute;inset:0"></dc-import></div><div style="font-size:11px;color:#8a7580">Play 512 满幅</div></div>
+        </div>
+        <div style="font-size:11.5px;color:#a2909a;margin-top:16px;line-height:1.6">Android 13+ 需附 <code style="background:#f3ecef;padding:1px 5px;border-radius:4px">monochrome</code> 单色层（系统自动上色）。Play 商店图 512×512 满幅。</div>
+      </div>
+    </div>
+
+    <!-- ===================== WeChat ===================== -->
+    <div style="margin-top:44px;display:flex;align-items:center;gap:10px">
+      <div style="width:26px;height:26px;border-radius:7px;background:#07c160;display:flex;align-items:center;justify-content:center;color:#fff;font-size:15px;font-weight:800"></div>
+      <div style="font-size:20px;font-weight:700;color:#3d2f33">微信小程序</div>
+      <div style="font-size:12.5px;color:#8a7580">程序方图标 · TabBar 图标双态（无动效，纯静态切图）</div>
+    </div>
+
+    <div style="display:flex;gap:26px;flex-wrap:wrap;margin-top:22px">
+      <div style="background:#fff;border-radius:24px;padding:28px 30px;box-shadow:0 8px 24px rgba(61,47,51,.07)">
+        <div style="font-size:12px;font-weight:700;letter-spacing:.1em;color:#8a7580;text-transform:uppercase;margin-bottom:18px">小程序方图标 144×144</div>
+        <div style="display:flex;gap:22px;align-items:flex-end">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:9px"><div style="position:relative;width:144px;height:144px;border-radius:8px;overflow:hidden;box-shadow:0 8px 20px rgba(61,47,51,.16)"><dc-import name="IconArt" hint-size="144px,144px" style="position:absolute;inset:0"></dc-import></div><div style="font-size:11px;color:#8a7580">交付方图 144px</div></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:9px"><div style="position:relative;width:96px;height:96px;border-radius:50%;overflow:hidden;box-shadow:0 6px 16px rgba(61,47,51,.16)"><dc-import name="IconArt" hint-size="96px,96px" style="position:absolute;inset:0"></dc-import></div><div style="font-size:11px;color:#8a7580">列表处圆形裁切</div></div>
+        </div>
+        <div style="font-size:11.5px;color:#a2909a;margin-top:16px;width:280px;line-height:1.6">头像/入口处微信会做圆形裁切，主图案已居中留白，裁切后不丢信息。</div>
+      </div>
+
+      <div style="background:#fff;border-radius:24px;padding:28px 30px;box-shadow:0 8px 24px rgba(61,47,51,.07)">
+        <div style="font-size:12px;font-weight:700;letter-spacing:.1em;color:#8a7580;text-transform:uppercase;margin-bottom:18px">TabBar 图标 81×81</div>
+        <div style="display:flex;gap:30px;align-items:flex-start">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:10px">
+            <div style="width:54px;height:54px;color:#9aa0a6"><svg viewBox="0 0 100 100" width="100%" height="100%" fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round"><circle cx="50" cy="50" r="15" opacity="0.5"></circle><circle cx="50" cy="50" r="31" opacity="0.35"></circle><line x1="50" y1="50" x2="76" y2="34"></line><circle cx="50" cy="50" r="3" fill="currentColor" stroke="none"></circle><text x="70" y="33" font-size="20" fill="currentColor" stroke="none" text-anchor="middle" dominant-baseline="central">♥</text></svg></div>
+            <div style="font-size:11px;color:#3d2f33;font-weight:600">追星</div>
+            <div style="font-size:10.5px;color:#a2909a">未选中 #9AA0A6</div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:10px">
+            <div style="width:54px;height:54px;color:#c4526e"><svg viewBox="0 0 100 100" width="100%" height="100%" fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round"><circle cx="50" cy="50" r="15" opacity="0.5"></circle><circle cx="50" cy="50" r="31" opacity="0.35"></circle><line x1="50" y1="50" x2="76" y2="34"></line><circle cx="50" cy="50" r="3" fill="currentColor" stroke="none"></circle><text x="70" y="33" font-size="20" fill="currentColor" stroke="none" text-anchor="middle" dominant-baseline="central">♥</text></svg></div>
+            <div style="font-size:11px;color:#c4526e;font-weight:700">追星</div>
+            <div style="font-size:10.5px;color:#a2909a">选中 #C4526E</div>
+          </div>
+          <div style="width:1px;height:96px;background:#eee2e8"></div>
+          <div style="width:230px">
+            <div style="font-size:11.5px;color:#8a7580;line-height:1.7">TabBar 用<b>简化线性符号</b>，非彩色主图；导出 81×81 PNG 透明底，纯色描边、无阴影渐变，保证小尺寸清晰。selectedIconPath 用粉、iconPath 用灰。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="font-size:12px;color:#a2909a;margin-top:30px;line-height:1.7;max-width:820px">
+      导出说明：所有平台源图基于 1024px 主图统一降采样，均为方形满幅、去圆角。iOS 去 alpha；Android/微信 前景与 TabBar 保留透明通道。需要我打包实际 PNG 切图或提供 App Store 深浅背景变体，告诉我即可。
+    </div>
+  </div>
+</section>
+</x-dc>
+</body>
+</html>
