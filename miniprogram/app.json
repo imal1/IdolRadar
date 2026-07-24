@@ -22,6 +22,7 @@
     "downloadFile": 15000
   },
   "style": "v2",
+  "darkmode": true,
   "lazyCodeLoading": "requiredComponents",
   "sitemapLocation": "sitemap.json"
 }

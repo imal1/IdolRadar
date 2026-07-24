@@ -43,8 +43,12 @@ Page({
   },
 
   onLoad: function () {
-    theme.apply(this);
+    theme.watchPage(this);
     this.loadData();
+  },
+
+  onUnload: function () {
+    theme.unwatch(this);
   },
 
   loadData: function () {
