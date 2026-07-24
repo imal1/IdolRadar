@@ -31,15 +31,12 @@ jobs:
           node-version: "24"
           cache: npm
 
-      - name: Prepare mini program config
-        run: cp miniprogram/config/env.example.js miniprogram/config/env.js
-
       - name: Mini program contract and release checks
         run: |
           npm ci --ignore-scripts
           npm test
           npm run validate
-          docker compose config --quiet
+          docker compose -f backend/compose.yaml config --quiet
 
       - name: Production image build
-        run: docker build --tag idolradar-ci .
+        run: docker build --tag idolradar-ci backend

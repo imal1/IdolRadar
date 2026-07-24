@@ -2,10 +2,9 @@
 FROM maven:3.9-eclipse-temurin-21-alpine AS build
 
 WORKDIR /workspace
-COPY backend/maven-settings.xml /root/.m2/settings.xml
-COPY backend/pom.xml ./pom.xml
+COPY pom.xml ./pom.xml
 
-COPY backend/src ./src
+COPY src ./src
 RUN mvn -B -q -DskipTests package
 
 FROM eclipse-temurin:21-jre-alpine

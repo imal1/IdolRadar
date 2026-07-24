@@ -39,6 +39,10 @@ x-runtime-environment: &runtime-environment
   IDOLRADAR_WORKER_NOTIFICATION_RETRY_BASE: ${NOTIFICATION_RETRY_BASE:-1m}
   LOGGING_LEVEL_ROOT: ${LOG_LEVEL:-INFO}
 
+# 四个一次性/常驻服务共用同一镜像；构建配置集中在此，Compose 只构建一次后复用。
+x-app-build: &app-build
+  build: .
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -76,7 +80,7 @@ services:
       retries: 12
 
   migrate:
-    build: .
+    <<: *app-build
     environment:
       <<: *database-environment
       APP_MODE: migrate
@@ -88,7 +92,7 @@ services:
     restart: "no"
 
   seed:
-    build: .
+    <<: *app-build
     profiles: ["tools"]
     environment:
       <<: *database-environment
@@ -96,14 +100,15 @@ services:
       SPRING_FLYWAY_ENABLED: "false"
       IDOLRADAR_SEED_DIRECTORY: /app/database
     volumes:
-      - ./database:/app/database:ro
+      # database/ 仍在仓库根；compose 现位于 backend/，故用 ../database 指回根目录 seed。
+      - ../database:/app/database:ro
     depends_on:
       migrate:
         condition: service_completed_successfully
     restart: "no"
 
   fetch-feeds:
-    build: .
+    <<: *app-build
     # Worker 是外部调度的一次性任务；--profile jobs 可在本机手动运行。
     profiles: ["jobs"]
     environment:
@@ -120,7 +125,7 @@ services:
     restart: "no"
 
   app:
-    build: .
+    <<: *app-build
     restart: unless-stopped
     environment:
       <<: *runtime-environment

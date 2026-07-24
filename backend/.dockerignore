@@ -1,0 +1,8 @@
+# 构建上下文为 backend/；仅排除构建产物与本地密钥，其余源码需进入镜像。
+.git
+.gitignore
+.DS_Store
+target
+.env
+.env.*
+!.env.example
