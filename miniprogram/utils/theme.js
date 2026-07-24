@@ -25,7 +25,7 @@ function isNight(now) {
 
 // Overscroll/window background so the pull-down area matches the theme.
 function setWindowBackground(night) {
-  if (!wx.setBackgroundColor) {
+  if (typeof wx === 'undefined' || !wx.setBackgroundColor) {
     return;
   }
   wx.setBackgroundColor(night
@@ -38,7 +38,7 @@ function setWindowBackground(night) {
 // Pair with unwatch() in onUnload/detached so the handler is not leaked.
 function watch(target, onChange) {
   onChange(isNight());
-  if (!wx.onThemeChange) {
+  if (typeof wx === 'undefined' || !wx.onThemeChange) {
     return;
   }
   target.__themeHandler = function (res) {
@@ -48,7 +48,7 @@ function watch(target, onChange) {
 }
 
 function unwatch(target) {
-  if (target.__themeHandler && wx.offThemeChange) {
+  if (target.__themeHandler && typeof wx !== 'undefined' && wx.offThemeChange) {
     wx.offThemeChange(target.__themeHandler);
   }
   target.__themeHandler = null;
