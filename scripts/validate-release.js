@@ -159,7 +159,7 @@ const requiredFiles = [
   'miniprogram/app.js',
   'miniprogram/app.json',
   'miniprogram/app.wxss',
-  'miniprogram/config/env.js',
+  'miniprogram/config/env.example.js',
   'miniprogram/utils/api.js',
   'backend/pom.xml',
   'backend/src/main/java/com/idolradar/IdolRadarApplication.java',
@@ -249,7 +249,11 @@ if (fs.existsSync(projectConfigPath)) {
 }
 
 let clientConfig = null;
-const clientEnvPath = path.join(root, 'miniprogram/config/env.js');
+const localClientEnvPath = path.join(root, 'miniprogram/config/env.js');
+// 本地私有配置优先；CI 和新克隆仓库使用不含真实域名的示例配置。
+const clientEnvPath = fs.existsSync(localClientEnvPath)
+  ? localClientEnvPath
+  : path.join(root, 'miniprogram/config/env.example.js');
 if (fs.existsSync(clientEnvPath)) {
   try {
     delete require.cache[require.resolve(clientEnvPath)];

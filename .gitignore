@@ -6,12 +6,16 @@
 .env.*
 !.env.example
 .codex/
+.agents/
+.serena/
+skills-lock.json
 coverage/
 graphify-out/
 node_modules/
 **/node_modules/
 **/target/
 /backend/maven-settings.xml
+/miniprogram/config/env.js
 project.private.config.json
 npm-debug.log*
 *.jar
