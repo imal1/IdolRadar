@@ -95,3 +95,204 @@ button::after {
 .state-action {
   margin-top: 27rpx;
 }
+
+/* ===== Night mode (00:00–06:00): dark theme overrides ===== */
+/* Toggled by `night` class on .page-shell (see utils/theme.js). Higher
+   specificity than the page-scoped light rules, so these win. */
+.page-shell.night {
+  background:
+    radial-gradient(3rpx 3rpx at 17% 7%, rgba(226, 216, 255, 0.26), transparent),
+    radial-gradient(2rpx 2rpx at 61% 5%, rgba(255, 255, 255, 0.4), transparent),
+    radial-gradient(3rpx 3rpx at 83% 13%, rgba(226, 216, 255, 0.55), transparent),
+    radial-gradient(2rpx 2rpx at 33% 18%, rgba(255, 255, 255, 0.32), transparent),
+    radial-gradient(2rpx 2rpx at 90% 30%, rgba(255, 255, 255, 0.3), transparent),
+    radial-gradient(3rpx 3rpx at 11% 45%, rgba(255, 255, 255, 0.3), transparent),
+    radial-gradient(130% 85% at 80% -8%, rgba(130, 116, 214, 0.3), transparent 60%),
+    linear-gradient(180deg, #191634 0%, #171426 46%, #1c1524 100%);
+}
+
+/* Text */
+.night .page-title,
+.night .state-title,
+.night .section-title,
+.night .idol-name,
+.night .stat-value,
+.night .latest-title,
+.night .feed-title,
+.night .picker-title,
+.night .picker-name,
+.night .profile-name,
+.night .guard-name,
+.night .reminder-title,
+.night .about-row,
+.night .search-input {
+  color: #e9e4f4;
+}
+
+.night .state-copy,
+.night .signal-row,
+.night .stat-label,
+.night .subscribe-title,
+.night .subscribe-subtitle,
+.night .latest-summary,
+.night .feed-summary,
+.night .picker-subtitle,
+.night .picker-bio,
+.night .profile-note,
+.night .guard-note,
+.night .reminder-note,
+.night .change-button {
+  color: #9a92b6;
+}
+
+.night .section-note,
+.night .post-time,
+.night .source-count,
+.night .card-label,
+.night .feed-footer,
+.night .picker-footnote,
+.night .about-value,
+.night .subscription-tip,
+.night .slogan {
+  color: #7c7699;
+}
+
+.night .stat-accent,
+.night .stat-value.stat-accent {
+  color: #f2a3bb;
+}
+
+/* Cards / surfaces (light #fff -> translucent white on dark) */
+.night .state-card,
+.night .latest-card,
+.night .empty-card,
+.night .feed-list,
+.night .search-box,
+.night .picker-card,
+.night .no-result,
+.night .me-card,
+.night .about-list {
+  background: rgba(255, 255, 255, 0.055);
+  box-shadow: 0 8rpx 31rpx rgba(0, 0, 0, 0.35);
+}
+
+.night .about-row {
+  background: transparent;
+}
+
+.night .latest-card,
+.night .empty-card {
+  border-color: rgba(242, 163, 187, 0.28);
+}
+
+.night .feed-item,
+.night .about-row {
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+
+/* Gradient header cards */
+.night .idol-header {
+  background: linear-gradient(135deg, #3a2b47 0%, #2f2a4c 55%, #252248 100%);
+  box-shadow: 0 12rpx 38rpx rgba(150, 110, 190, 0.28);
+}
+
+.night .loading-card,
+.night .me-loading,
+.night .profile-card {
+  background: linear-gradient(135deg, #3a2b47, #272348);
+}
+
+.night .sweep-light {
+  background: linear-gradient(105deg, transparent, rgba(226, 216, 255, 0.26), transparent);
+}
+
+/* Header inner chips */
+.night .business-badge {
+  background: rgba(255, 255, 255, 0.1);
+  color: #f2a3bb;
+}
+
+.night .change-button,
+.night .stat-cell {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.night .online-dot {
+  border-color: #241f3d;
+}
+
+/* Buttons (secondary / copy stay pink-on-dark) */
+.night .secondary-button,
+.night .copy-button {
+  background: rgba(242, 163, 187, 0.14);
+  color: #f2a3bb;
+}
+
+/* Subscribe banner / tip */
+.night .subscribe-banner {
+  background: rgba(255, 255, 255, 0.055);
+  border-color: rgba(242, 163, 187, 0.4);
+}
+
+.night .subscription-tip {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* Channel tags */
+.night .channel-purple {
+  background: rgba(143, 127, 168, 0.2);
+  color: #b3a6d6;
+}
+
+.night .channel-blue {
+  background: rgba(77, 143, 184, 0.2);
+  color: #7db6da;
+}
+
+.night .channel-green {
+  background: rgba(79, 158, 122, 0.2);
+  color: #6cc79a;
+}
+
+.night .channel-pink {
+  background: rgba(242, 163, 187, 0.14);
+  color: #f2a3bb;
+}
+
+/* Picker specifics */
+.night .picker-card-current {
+  border-color: rgba(242, 163, 187, 0.5);
+}
+
+.night .current-badge {
+  background: rgba(242, 163, 187, 0.14);
+  color: #f2a3bb;
+}
+
+.night .pick-button-disabled {
+  background: rgba(255, 255, 255, 0.07);
+  color: #6e6888;
+}
+
+.night .search-icon {
+  border-color: #6e6888;
+}
+
+.night .search-icon::after {
+  background: #6e6888;
+}
+
+.night .search-placeholder {
+  color: #6e6888;
+}
+
+.night .clear-search {
+  background: rgba(255, 255, 255, 0.07);
+  color: #9a92b6;
+}
+
+/* Me profile avatar */
+.night .user-avatar {
+  background: rgba(255, 255, 255, 0.055);
+  color: #e5a9bf;
+}

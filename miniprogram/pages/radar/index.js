@@ -2,6 +2,7 @@ var api = require('../../utils/api');
 var feed = require('../../utils/feed');
 var idolUtils = require('../../utils/idol');
 var subscription = require('../../utils/subscription');
+var theme = require('../../utils/theme');
 
 var PAGE_SIZE = 20;
 
@@ -105,6 +106,7 @@ Page({
   },
 
   onShow: function () {
+    theme.apply(this);
     if (this._shownOnce && !this.data.loading && !this.data.refreshing) {
       this.loadInitial({ silent: true, forceBootstrap: true }).catch(function () {
         return null;

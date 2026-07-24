@@ -1,5 +1,6 @@
 var api = require('../../utils/api');
 var idolUtils = require('../../utils/idol');
+var theme = require('../../utils/theme');
 
 function getUser(data) {
   return data && data.user && typeof data.user === 'object' ? data.user : (data || {});
@@ -42,6 +43,7 @@ Page({
   },
 
   onLoad: function () {
+    theme.apply(this);
     this.loadData();
   },
 

@@ -68,6 +68,24 @@
   transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+.floating-nav.night .nav-item {
+  background: rgba(42, 37, 64, 0.92);
+  box-shadow: 0 8rpx 27rpx rgba(120, 60, 110, 0.4);
+  color: #9a92b6;
+}
+
+.floating-nav.night .nav-item-current {
+  background: linear-gradient(135deg, #e78aa4, #c4526e);
+  color: #ffffff;
+}
+
+.floating-nav.night .nav-trigger {
+  background: linear-gradient(140deg, #8b7fd6, #584a9c);
+  box-shadow: 0 10rpx 31rpx rgba(120, 100, 210, 0.5);
+  color: #fdf7ff;
+  text-shadow: 0 0 12rpx rgba(205, 195, 255, 0.8);
+}
+
 @keyframes nav-floatin {
   from {
     opacity: 0;

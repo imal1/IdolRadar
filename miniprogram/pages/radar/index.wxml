@@ -1,4 +1,4 @@
-<view class="page-shell radar-page">
+<view class="page-shell radar-page {{night ? 'night' : ''}}">
   <view class="page-title">IdolRadar</view>
   <view class="loading-card" wx:if="{{loading}}">
     <view class="loading-orbit"></view>
@@ -51,7 +51,8 @@
     </view>
 
     <view class="subscribe-banner" wx:if="{{showSubscribeBanner}}">
-      <image class="reminder-icon" src="/assets/reminder.svg"></image>
+      <image wx:if="{{!night}}" class="reminder-icon" src="/assets/reminder.svg"></image>
+      <view wx:else class="reminder-moon">☾</view>
       <view class="subscribe-copy">
         <text class="subscribe-title">开启蹲守提醒</text>
         <text class="subscribe-subtitle">她一营业，微信马上叫你</text>

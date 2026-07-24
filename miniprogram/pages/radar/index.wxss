@@ -218,6 +218,20 @@
   height: 65rpx;
 }
 
+.reminder-moon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 65rpx;
+  height: 65rpx;
+  border-radius: 22rpx;
+  background: linear-gradient(140deg, #8b7fd6, #584a9c);
+  color: #fdf7ff;
+  font-size: 34rpx;
+  text-shadow: 0 0 18rpx rgba(205, 195, 255, 0.8);
+}
+
 .subscribe-copy {
   display: flex;
   flex: 1;
