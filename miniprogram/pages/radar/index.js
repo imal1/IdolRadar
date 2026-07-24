@@ -100,14 +100,18 @@ Page({
   onLoad: function (options) {
     this._shownOnce = false;
     this._dataRequestId = 0;
+    theme.watchPage(this);
     this.setData({ deepLinkPostId: safeDecode(options && options.postId) });
     this.loadInitial().catch(function () {
       return null;
     });
   },
 
+  onUnload: function () {
+    theme.unwatch(this);
+  },
+
   onShow: function () {
-    theme.apply(this);
     if (this._shownOnce && !this.data.loading && !this.data.refreshing) {
       this.loadInitial({ silent: true, forceBootstrap: true }).catch(function () {
         return null;

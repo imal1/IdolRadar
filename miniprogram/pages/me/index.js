@@ -55,8 +55,15 @@ Page({
     version: config.version
   },
 
+  onLoad: function () {
+    theme.watchPage(this);
+  },
+
+  onUnload: function () {
+    theme.unwatch(this);
+  },
+
   onShow: function () {
-    theme.apply(this);
     this.loadData();
   },
 

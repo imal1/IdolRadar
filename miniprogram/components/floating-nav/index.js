@@ -22,10 +22,17 @@ Component({
   },
 
   attached: function () {
-    this.setData({ night: theme.isNight() });
+    var comp = this;
+    theme.watch(this, function (night) {
+      comp.setData({ night: night });
+    });
     var info = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync();
     this._winHeight = info.windowHeight;
     this._offY = 0;
+  },
+
+  detached: function () {
+    theme.unwatch(this);
   },
 
   methods: {

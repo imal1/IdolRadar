@@ -1,20 +1,62 @@
-// Night mode is time-fixed: 00:00–06:00 local time shows the dark theme.
-function isNight(now) {
-  var hour = (now || new Date()).getHours();
-  return hour >= 0 && hour < 6;
-}
-
-// Set page `night` flag + window overscroll background so the whole surface
-// (including pull-down area) matches the theme.
-function apply(page) {
-  var night = isNight();
-  page.setData({ night: night });
-  if (wx.setBackgroundColor) {
-    wx.setBackgroundColor(night
-      ? { backgroundColor: '#171426', backgroundColorTop: '#171426', backgroundColorBottom: '#1c1524' }
-      : { backgroundColor: '#f7f3f1', backgroundColorTop: '#fdf3f0', backgroundColorBottom: '#f7f3f1' });
+// Theme follows the system light/dark setting. WeChat only reports `theme`
+// and fires wx.onThemeChange when app.json sets "darkmode": true.
+function getTheme() {
+  if (wx.getAppBaseInfo) {
+    return wx.getAppBaseInfo().theme || 'light';
   }
-  return night;
+  if (wx.getSystemInfoSync) {
+    return wx.getSystemInfoSync().theme || 'light';
+  }
+  return 'light';
 }
 
-module.exports = { isNight: isNight, apply: apply };
+function isNight() {
+  return getTheme() === 'dark';
+}
+
+// Overscroll/window background so the pull-down area matches the theme.
+function setWindowBackground(night) {
+  if (!wx.setBackgroundColor) {
+    return;
+  }
+  wx.setBackgroundColor(night
+    ? { backgroundColor: '#171426', backgroundColorTop: '#171426', backgroundColorBottom: '#1c1524' }
+    : { backgroundColor: '#f7f3f1', backgroundColorTop: '#fdf3f0', backgroundColorBottom: '#f7f3f1' });
+}
+
+// Register a theme listener on `target` (page or component). Fires `onChange`
+// with the current value immediately, then again on every system theme change.
+// Pair with unwatch() in onUnload/detached so the handler is not leaked.
+function watch(target, onChange) {
+  onChange(isNight());
+  if (!wx.onThemeChange) {
+    return;
+  }
+  target.__themeHandler = function (res) {
+    onChange(res.theme === 'dark');
+  };
+  wx.onThemeChange(target.__themeHandler);
+}
+
+function unwatch(target) {
+  if (target.__themeHandler && wx.offThemeChange) {
+    wx.offThemeChange(target.__themeHandler);
+  }
+  target.__themeHandler = null;
+}
+
+// Convenience for pages: keep the `night` flag and window background in sync
+// with the system theme for as long as the page is alive.
+function watchPage(page) {
+  watch(page, function (night) {
+    page.setData({ night: night });
+    setWindowBackground(night);
+  });
+}
+
+module.exports = {
+  isNight: isNight,
+  watch: watch,
+  unwatch: unwatch,
+  watchPage: watchPage
+};
