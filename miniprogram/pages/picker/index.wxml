@@ -1,4 +1,4 @@
-<view class="page-shell picker-page">
+<view class="page-shell picker-page {{night ? 'night' : ''}}">
   <view class="page-title">选择守护对象</view>
   <view class="picker-intro">
     <text class="picker-title">今天想蹲谁？</text>

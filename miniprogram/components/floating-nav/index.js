@@ -1,3 +1,5 @@
+var theme = require('../../utils/theme');
+
 Component({
   properties: {
     current: {
@@ -7,6 +9,7 @@ Component({
   },
 
   data: {
+    night: false,
     open: false,
     dragX: 0,
     dragY: 0,
@@ -19,6 +22,7 @@ Component({
   },
 
   attached: function () {
+    this.setData({ night: theme.isNight() });
     var info = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync();
     this._winHeight = info.windowHeight;
     this._offY = 0;

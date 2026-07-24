@@ -1,5 +1,5 @@
 <view class="nav-backdrop" wx:if="{{open}}" catchtap="close"></view>
-<view class="floating-nav {{snapping ? 'snapping' : ''}}" style="transform:translate({{dragX}}px,{{dragY}}px)">
+<view class="floating-nav {{snapping ? 'snapping' : ''}} {{night ? 'night' : ''}}" style="transform:translate({{dragX}}px,{{dragY}}px)">
   <view class="nav-menu" wx:if="{{open}}">
     <view
       wx:for="{{items}}"
@@ -19,5 +19,5 @@
     catchtouchend="dragEnd"
     aria-role="button"
     aria-label="{{open ? '收起页面导航' : '展开页面导航'}}"
-  >{{open ? '×' : '❀'}}</view>
+  >{{open ? '×' : (night ? '☾' : '❀')}}</view>
 </view>

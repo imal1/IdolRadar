@@ -1,6 +1,7 @@
 var api = require('../../utils/api');
 var idolUtils = require('../../utils/idol');
 var subscription = require('../../utils/subscription');
+var theme = require('../../utils/theme');
 var time = require('../../utils/time');
 var config = require('../../config/env');
 
@@ -54,6 +55,7 @@ Page({
   },
 
   onShow: function () {
+    theme.apply(this);
     this.loadData();
   },
 
