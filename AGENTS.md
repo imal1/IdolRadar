@@ -1,5 +1,12 @@
 # IdolRadar
 
+## 项目结构（前后端分离）
+
+- `miniprogram/`：微信小程序，**开发者工具直接导入此目录**（`project.config.json` 在内，`miniprogramRoot` 为 `./`）。
+- `backend/`：Spring Boot 后端**及全部部署配置**（`Dockerfile`、`compose*.yaml`、`.env.example`）。所有 `docker` 命令都在 `backend/` 目录下执行。
+- `database/`：示例 seed；`backend/compose.yaml` 用 `../database` 挂载。
+- `scripts/validate-release.js`：发布配置校验，是「必需文件清单」的权威来源；改动配置路径后同步这里。
+
 ## 设计稿（Figma）
 
 本项目 UI 设计稿：https://www.figma.com/design/TZbrL98T28IApjsOkC8aBP
@@ -12,6 +19,10 @@
 
 1. 在项目根目录运行 `claude`，首次会提示信任项目级 MCP 配置，选择允许。
 2. 运行 `/mcp`，对 `figma` server 完成 OAuth 登录（使用自己的 Figma 账号，需对上述文件有查看权限）。
+
+## 调试规范
+
+- 调试小程序时，**永远只用 `miniprogram-automator`**，不使用其他调试方式。
 
 ## 代码注释规范
 

@@ -151,15 +151,15 @@ function isPlaceholder(value) {
 const requiredFiles = [
   'package.json',
   'package-lock.json',
-  '.env.example',
-  'Dockerfile',
-  'compose.yaml',
-  'compose.prod.yaml',
-  'project.config.json',
+  'backend/.env.example',
+  'backend/Dockerfile',
+  'backend/compose.yaml',
+  'backend/compose.prod.yaml',
+  'miniprogram/project.config.json',
   'miniprogram/app.js',
   'miniprogram/app.json',
   'miniprogram/app.wxss',
-  'miniprogram/config/env.example.js',
+  'miniprogram/config/env.js',
   'miniprogram/utils/api.js',
   'backend/pom.xml',
   'backend/src/main/java/com/idolradar/IdolRadarApplication.java',
@@ -237,23 +237,21 @@ if (fs.existsSync(pomPath)) {
 }
 
 let projectAppId = '';
-const projectConfigPath = path.join(root, 'project.config.json');
+const projectConfigPath = path.join(root, 'miniprogram/project.config.json');
 if (fs.existsSync(projectConfigPath)) {
   const config = parseJson(projectConfigPath);
   projectAppId = config?.appid || '';
-  if (isPlaceholder(projectAppId)) placeholder('project.config.json: appid 仍是占位值');
-  else if (!/^wx[a-f0-9]{16}$/i.test(projectAppId)) addError('project.config.json: appid 格式无效');
-  if (config?.miniprogramRoot !== 'miniprogram/') {
-    addError('project.config.json: miniprogramRoot 必须为 "miniprogram/"');
+  if (isPlaceholder(projectAppId)) placeholder('miniprogram/project.config.json: appid 仍是占位值');
+  else if (!/^wx[a-f0-9]{16}$/i.test(projectAppId)) addError('miniprogram/project.config.json: appid 格式无效');
+  // project.config.json 已随小程序代码放在 miniprogram/，故 miniprogramRoot 指向自身目录。
+  if (config?.miniprogramRoot !== './') {
+    addError('miniprogram/project.config.json: miniprogramRoot 必须为 "./"');
   }
 }
 
 let clientConfig = null;
-const localClientEnvPath = path.join(root, 'miniprogram/config/env.js');
-// 本地私有配置优先；CI 和新克隆仓库使用不含真实域名的示例配置。
-const clientEnvPath = fs.existsSync(localClientEnvPath)
-  ? localClientEnvPath
-  : path.join(root, 'miniprogram/config/env.example.js');
+// env.js 无密钥（公开域名 + 模板 ID），已随仓库提交，不再用示例文件占位。
+const clientEnvPath = path.join(root, 'miniprogram/config/env.js');
 if (fs.existsSync(clientEnvPath)) {
   try {
     delete require.cache[require.resolve(clientEnvPath)];
@@ -309,7 +307,7 @@ if (dotenv.MINIPROGRAM_STATE !== 'formal') {
   placeholder('.env/process: MINIPROGRAM_STATE 发布必须为 formal');
 }
 if (!isPlaceholder(dotenv.WECHAT_APP_ID) && projectAppId && dotenv.WECHAT_APP_ID !== projectAppId) {
-  addError('.env/process: WECHAT_APP_ID 与 project.config.json appid 不一致');
+  addError('.env/process: WECHAT_APP_ID 与 miniprogram/project.config.json appid 不一致');
 }
 if (!isPlaceholder(dotenv.SUBSCRIBE_TEMPLATE_ID)
   && !isPlaceholder(clientConfig?.subscribeTemplateId)
@@ -317,8 +315,8 @@ if (!isPlaceholder(dotenv.SUBSCRIBE_TEMPLATE_ID)
   addError('客户端 subscribeTemplateId 与服务端 SUBSCRIBE_TEMPLATE_ID 不一致');
 }
 
-const exampleEnv = fs.existsSync(path.join(root, '.env.example'))
-  ? fs.readFileSync(path.join(root, '.env.example'), 'utf8')
+const exampleEnv = fs.existsSync(path.join(root, 'backend/.env.example'))
+  ? fs.readFileSync(path.join(root, 'backend/.env.example'), 'utf8')
   : '';
 const exampleHasDatabaseUrl = /^SPRING_DATASOURCE_URL=/m.test(exampleEnv);
 const exampleHasSplitDatabase = [
@@ -327,10 +325,10 @@ const exampleHasSplitDatabase = [
   ['POSTGRES_PASSWORD']
 ].every((names) => names.some((name) => new RegExp(`^${name}=`, 'm').test(exampleEnv)));
 if (!exampleHasDatabaseUrl && !exampleHasSplitDatabase) {
-  addError('.env.example: 须包含 SPRING_DATASOURCE_URL 或完整 POSTGRES_* 数据库变量');
+  addError('backend/.env.example: 须包含 SPRING_DATASOURCE_URL 或完整 POSTGRES_* 数据库变量');
 }
 for (const name of ['WECHAT_APP_ID', 'WECHAT_APP_SECRET', 'SUBSCRIBE_TEMPLATE_ID']) {
-  if (!new RegExp(`^${name}=`, 'm').test(exampleEnv)) addError(`.env.example: 缺少 ${name}`);
+  if (!new RegExp(`^${name}=`, 'm').test(exampleEnv)) addError(`backend/.env.example: 缺少 ${name}`);
 }
 
 const appSource = fs.existsSync(path.join(root, 'miniprogram/app.js'))
@@ -359,20 +357,20 @@ if (fs.existsSync(migrationPath)) {
   }
 }
 
-const composePath = path.join(root, 'compose.yaml');
+const composePath = path.join(root, 'backend/compose.yaml');
 if (fs.existsSync(composePath)) {
   const compose = fs.readFileSync(composePath, 'utf8');
   for (const service of ['postgres:', 'redis:', 'migrate:', 'app:', 'fetch-feeds:']) {
-    if (!compose.includes(service)) addError(`compose.yaml: 缺少 ${service.slice(0, -1)} 服务`);
+    if (!compose.includes(service)) addError(`backend/compose.yaml: 缺少 ${service.slice(0, -1)} 服务`);
   }
   if (!compose.includes('127.0.0.1:${POSTGRES_PORT:-5432}:5432')) {
-    addError('compose.yaml: PostgreSQL 端口必须仅绑定 127.0.0.1');
+    addError('backend/compose.yaml: PostgreSQL 端口必须仅绑定 127.0.0.1');
   }
   if (!compose.includes('127.0.0.1:${REDIS_PORT:-6379}:6379')) {
-    addError('compose.yaml: Redis 端口必须仅绑定 127.0.0.1');
+    addError('backend/compose.yaml: Redis 端口必须仅绑定 127.0.0.1');
   }
   if (/command:\s*\[[^\]]*node/i.test(compose)) {
-    addError('compose.yaml: 生产服务不得执行 Node.js');
+    addError('backend/compose.yaml: 生产服务不得执行 Node.js');
   }
   for (const name of [
     'SPRING_DATASOURCE_URL',
@@ -385,23 +383,23 @@ if (fs.existsSync(composePath)) {
     'IDOLRADAR_WORKER_NOTIFICATION_MAX_ATTEMPTS'
   ]) {
     if (!new RegExp(`^\\s+${name}:`, 'm').test(compose)) {
-      addError(`compose.yaml: 缺少运行变量 ${name}`);
+      addError(`backend/compose.yaml: 缺少运行变量 ${name}`);
     }
   }
 }
 
-const dockerfilePath = path.join(root, 'Dockerfile');
+const dockerfilePath = path.join(root, 'backend/Dockerfile');
 if (fs.existsSync(dockerfilePath)) {
   const dockerfile = fs.readFileSync(dockerfilePath, 'utf8');
   if (/^FROM\s+node\b/im.test(dockerfile) || /\bnode\b.*server\//i.test(dockerfile)) {
-    addError('Dockerfile: 生产镜像不得使用 Node.js 后端');
+    addError('backend/Dockerfile: 生产镜像不得使用 Node.js 后端');
   }
   if (!/^USER\s+idolradar\s*$/m.test(dockerfile)) {
-    addError('Dockerfile: 运行阶段必须使用非 root 用户 idolradar');
+    addError('backend/Dockerfile: 运行阶段必须使用非 root 用户 idolradar');
   }
 }
 
-const productionComposePath = path.join(root, 'compose.prod.yaml');
+const productionComposePath = path.join(root, 'backend/compose.prod.yaml');
 if (fs.existsSync(productionComposePath)) {
   const productionCompose = fs.readFileSync(productionComposePath, 'utf8');
   for (const requiredSecret of [
@@ -413,15 +411,15 @@ if (fs.existsSync(productionComposePath)) {
     'SUBSCRIBE_TEMPLATE_ID'
   ]) {
     if (!productionCompose.includes(`\${${requiredSecret}:?required}`)) {
-      addError(`compose.prod.yaml: ${requiredSecret} 必须为强制注入变量`);
+      addError(`backend/compose.prod.yaml: ${requiredSecret} 必须为强制注入变量`);
     }
   }
   if (!/SPRING_DATA_REDIS_SSL_ENABLED:\s*"true"/.test(productionCompose)) {
-    addError('compose.prod.yaml: 托管 Redis 必须启用 TLS');
+    addError('backend/compose.prod.yaml: 托管 Redis 必须启用 TLS');
   }
   if (!/migrate:[\s\S]*?SPRING_FLYWAY_ENABLED:\s*"true"/.test(productionCompose)
     || !/app:[\s\S]*?SPRING_FLYWAY_ENABLED:\s*"false"/.test(productionCompose)) {
-    addError('compose.prod.yaml: Flyway 只能由 migrate 服务执行');
+    addError('backend/compose.prod.yaml: Flyway 只能由 migrate 服务执行');
   }
 }
 

@@ -24,9 +24,10 @@
 ## 目录
 
 ```text
-miniprogram/             微信小程序
+miniprogram/             微信小程序（开发者工具项目根，含 project.config.json）
 backend/src/main/java/   Spring Boot API、认证、RSS Worker、推送、seed
 backend/src/main/resources/db/migration/  PostgreSQL migration
+backend/Dockerfile 等     后端镜像与部署配置（Dockerfile、compose*.yaml、.env.example）
 database/                安全示例 seed；生产前必须替换
 tests/                   小程序契约与发布校验
 docs/                    PRD、功能设计、测试与部署手册
@@ -36,9 +37,12 @@ docs/                    PRD、功能设计、测试与部署手册
 
 要求：Docker。真实登录还需要真实小程序 AppID/AppSecret；只检查服务健康时可暂留占位值。
 
+部署配置集中在 `backend/`，Docker 相关命令都在该目录下执行：
+
 ```bash
-cp .env.example .env
-# 编辑 .env：数据库密码；联调登录时填写 WECHAT_APP_ID/WECHAT_APP_SECRET
+cp backend/.env.example backend/.env
+# 编辑 backend/.env：数据库密码；联调登录时填写 WECHAT_APP_ID/WECHAT_APP_SECRET
+cd backend
 docker compose up -d postgres redis
 docker compose run --rm migrate
 docker compose --profile tools run --rm seed
@@ -46,7 +50,9 @@ docker compose up -d app
 curl http://127.0.0.1:8080/readyz
 ```
 
-微信开发者工具读取 [miniprogram/config/env.js](miniprogram/config/env.js)，默认访问 `http://127.0.0.1:8080`。开发者工具本机 HTTP 调试需关闭合法域名校验；真机/体验版必须使用已加入微信后台合法域名的生产 HTTPS 地址。
+微信开发者工具请**导入 `miniprogram/` 目录**作为项目（`project.config.json`/`project.private.config.json` 已随小程序代码放在其中，`miniprogramRoot` 为 `./`）。配置在 [miniprogram/config/env.js](miniprogram/config/env.js)（无密钥，已随仓库提交）：按需修改 `apiBaseUrl` 为可访问的 API 地址，上线前填写订阅消息模板 ID。
+
+默认访问 `http://127.0.0.1:8080`。开发者工具本机 HTTP 调试需关闭合法域名校验；真机/体验版必须使用已加入微信后台合法域名的生产 HTTPS 地址。
 
 Java 测试：
 
@@ -65,7 +71,7 @@ npm run validate
 
 ## 定时任务
 
-宿主 cron 或 Kubernetes CronJob 每 30 分钟运行一次：
+宿主 cron 或 Kubernetes CronJob 每 30 分钟运行一次（在 `backend/` 目录下）：
 
 ```bash
 docker compose --profile jobs run --rm fetch-feeds
