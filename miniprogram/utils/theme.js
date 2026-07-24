@@ -34,9 +34,8 @@ function setWindowBackground(night) {
     : { backgroundColor: '#f7f3f1', backgroundColorTop: '#fdf3f0', backgroundColorBottom: '#f7f3f1' });
 }
 
-// Register a theme listener on `target` (page or component). Fires `onChange`
-// with the current value immediately, then again on every system theme change.
-// Pair with unwatch() in onUnload/detached so the handler is not leaked.
+// 在页面/组件上注册主题监听：先立即回调当前值，之后每次系统主题切换再回调。
+// 请在 onUnload/detached 中配对调用 unwatch()，避免 handler 泄漏；若基础库缺少 offThemeChange，则只回调初值不做实时监听。
 function watch(target, onChange) {
   onChange(isNight());
   if (typeof wx === 'undefined' || !wx.onThemeChange) {
