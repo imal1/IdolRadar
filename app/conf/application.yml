@@ -1,9 +1,0 @@
-spring:
-  application:
-    name: idolradar-backend
-  lifecycle:
-    # shutdown.sh 发送 TERM 后，允许正在处理的请求在 20 秒内结束。
-    timeout-per-shutdown-phase: 20s
-
-server:
-  shutdown: graceful
