@@ -4,6 +4,9 @@
 
 - `miniprogram/`：微信小程序，**开发者工具直接导入此目录**（`project.config.json` 在内，`miniprogramRoot` 为 `./`）。
 - `backend/`：Spring Boot 后端**及全部部署配置**（`Dockerfile`、`compose*.yaml`、`.env.example`）。所有 `docker` 命令都在 `backend/` 目录下执行。
+- `rsshub/`：RSSHub 上游源码子模块，用于开发、调试和测试自定义 route；依赖与命令遵循子模块自身的 `package.json` 和 `pnpm-lock.yaml`。
+- `packages/test-utils/`：跨测试项目共享的纯 Node.js fixture/path 工具，不包含浏览器或小程序驱动。
+- `tests/miniprogram-e2e/`：Vitest 测试编排 + 官方 `miniprogram-automator` 驱动；小程序 UI 调试不得改用 Playwright。
 - `database/`：示例 seed；`backend/compose.yaml` 用 `../database` 挂载。
 - `scripts/validate-release.js`：发布配置校验，是「必需文件清单」的权威来源；改动配置路径后同步这里。
 

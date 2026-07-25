@@ -1,0 +1,6 @@
+packages:
+  - packages/*
+  - tests/miniprogram-e2e
+allowBuilds:
+  # core-js@2 仅用 postinstall 输出赞助提示；测试运行不需要执行该脚本。
+  core-js: false

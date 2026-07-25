@@ -6,6 +6,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.UnknownHostException;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -38,13 +39,19 @@ public class FeedUrlGuard {
     }
 
     private final HostResolver resolver;
+    private final List<Origin> trustedOrigins;
 
-    public FeedUrlGuard() {
-        this(InetAddress::getAllByName);
+    public FeedUrlGuard(WorkerProperties properties) {
+        this(InetAddress::getAllByName, properties.getRssTrustedOrigins());
     }
 
     FeedUrlGuard(HostResolver resolver) {
+        this(resolver, List.of());
+    }
+
+    FeedUrlGuard(HostResolver resolver, List<URI> trustedOrigins) {
         this.resolver = resolver;
+        this.trustedOrigins = trustedOrigins.stream().map(Origin::from).toList();
     }
 
     public ValidatedTarget validateAndResolve(String rawUrl) {
@@ -58,7 +65,8 @@ public class FeedUrlGuard {
         if (addresses == null || addresses.length == 0) {
             throw new FeedException("DNS_LOOKUP_FAILED", "RSS 域名解析失败");
         }
-        if (Arrays.stream(addresses).anyMatch(FeedUrlGuard::isUnsafeAddress)) {
+        if (!isTrustedOrigin(uri)
+                && Arrays.stream(addresses).anyMatch(FeedUrlGuard::isUnsafeAddress)) {
             throw new FeedException("UNSAFE_FEED_URL", "RSS URL 不能指向私有网络");
         }
         return new ValidatedTarget(uri, addresses);
@@ -75,10 +83,9 @@ public class FeedUrlGuard {
         } catch (IllegalArgumentException error) {
             throw new FeedException("INVALID_FEED_URL", "RSS URL 无效", error);
         }
-        if (!"https".equalsIgnoreCase(parsed.getScheme())
-                || parsed.getHost() == null
+        if (parsed.getScheme() == null || parsed.getHost() == null
                 || parsed.getRawUserInfo() != null) {
-            throw new FeedException("INVALID_FEED_URL", "RSS URL 必须使用 HTTPS");
+            throw new FeedException("INVALID_FEED_URL", "RSS URL 无效");
         }
 
         String host;
@@ -87,7 +94,11 @@ public class FeedUrlGuard {
         } catch (IllegalArgumentException error) {
             throw new FeedException("INVALID_FEED_URL", "RSS URL 无效", error);
         }
-        if (isUnsafeHostname(host)) {
+        boolean trusted = isTrustedOrigin(parsed);
+        if ((!"https".equalsIgnoreCase(parsed.getScheme()) && !trusted)) {
+            throw new FeedException("INVALID_FEED_URL", "RSS URL 必须使用 HTTPS");
+        }
+        if (isUnsafeHostname(host) && !trusted) {
             throw new FeedException("UNSAFE_FEED_URL", "RSS URL 不能指向私有网络");
         }
         try {
@@ -95,9 +106,30 @@ public class FeedUrlGuard {
             if (parsed.getPort() >= 0) authority += ":" + parsed.getPort();
             String path = parsed.getRawPath();
             String query = parsed.getRawQuery() == null ? "" : "?" + parsed.getRawQuery();
-            return new URI("https://" + authority + (path == null || path.isEmpty() ? "/" : path) + query);
+            String scheme = parsed.getScheme().toLowerCase(Locale.ROOT);
+            return new URI(scheme + "://" + authority + (path == null || path.isEmpty() ? "/" : path) + query);
         } catch (URISyntaxException error) {
             throw new FeedException("INVALID_FEED_URL", "RSS URL 无效", error);
+        }
+    }
+
+    private boolean isTrustedOrigin(URI uri) {
+        if (uri == null || uri.getScheme() == null || uri.getHost() == null) return false;
+        Origin candidate;
+        try {
+            candidate = Origin.from(uri);
+        } catch (IllegalArgumentException error) {
+            return false;
+        }
+        return trustedOrigins.contains(candidate);
+    }
+
+    /** 只比较规范化 scheme/host/effective port；路径无法扩大信任范围。 */
+    private record Origin(String scheme, String host, int port) {
+        private static Origin from(URI uri) {
+            String scheme = uri.getScheme().toLowerCase(Locale.ROOT);
+            int port = uri.getPort() >= 0 ? uri.getPort() : ("https".equals(scheme) ? 443 : 80);
+            return new Origin(scheme, normalizeHost(uri.getHost()), port);
         }
     }
 

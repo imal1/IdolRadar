@@ -28,8 +28,11 @@ miniprogram/             微信小程序（开发者工具项目根，含 projec
 backend/src/main/java/   Spring Boot API、认证、RSS Worker、推送、seed
 backend/src/main/resources/db/migration/  PostgreSQL migration
 backend/Dockerfile 等     后端镜像与部署配置（Dockerfile、compose*.yaml、.env.example）
-database/                安全示例 seed；生产前必须替换
-tests/                   小程序契约与发布校验
+rsshub/                  RSSHub 上游源码子模块，用于 route 开发
+packages/test-utils/      RSSHub/小程序测试可复用的纯 Node.js 工具
+database/                王一博与 RSSHub 微博 route seed
+tests/miniprogram-e2e/    Vitest + miniprogram-automator 小程序 E2E
+tests/                   小程序契约、E2E 与发布校验
 docs/                    PRD、功能设计、测试与部署手册
 ```
 
@@ -54,6 +57,23 @@ curl http://127.0.0.1:8080/readyz
 
 默认访问 `http://127.0.0.1:8080`。开发者工具本机 HTTP 调试需关闭合法域名校验；真机/体验版必须使用已加入微信后台合法域名的生产 HTTPS 地址。
 
+开发 RSSHub route：
+
+```bash
+git submodule update --init --depth 1
+corepack enable pnpm
+pnpm install --frozen-lockfile
+pnpm run rsshub:install
+pnpm run rsshub:dev
+```
+
+当前闭环直接复用 RSSHub 上游 `/weibo/user/:uid`：王一博 UID 为 `5492443184`。
+RSSHub Cookie、本地启动、seed、Worker 抓取及 PostgreSQL 查询命令见
+[RSSHub route 与小程序自动化开发](docs/RSSHUB-DEVELOPMENT.md#王一博微博到-postgresql-闭环)。
+
+完整工作流和小程序自动化边界见
+[RSSHub route 与小程序自动化开发](docs/RSSHUB-DEVELOPMENT.md)。
+
 Java 测试：
 
 ```bash
@@ -64,10 +84,21 @@ mvn -f backend/pom.xml -Pintegration-test -Didolradar.it.enabled=true verify
 第二条会用 Testcontainers 启动隔离的 PostgreSQL，验证 migration、约束、seed 幂等。可选客户端检查需要 Node.js 24：
 
 ```bash
-npm ci
-npm test
-npm run validate
+corepack enable pnpm
+pnpm install --frozen-lockfile
+pnpm test
+pnpm run validate
 ```
+
+安装并运行小程序自动化基础校验：
+
+```bash
+pnpm install --frozen-lockfile
+pnpm run test:miniprogram:e2e
+```
+
+真实 UI 用例必须设置 `WECHAT_CLI_PATH`，并且只通过 `miniprogram-automator` 驱动微信
+开发者工具；未设置时相关用例会跳过。
 
 ## 定时任务
 
@@ -82,10 +113,10 @@ docker compose --profile jobs run --rm fetch-feeds
 ## 上线校验
 
 ```bash
-npm run validate:release
+pnpm run validate:release
 ```
 
-校验阻止本机 API 地址、缺失服务端密钥、示例 RSS、错误 AppID、缺少 Java/Flyway/Redis/容器配置进入发布。完整流程见[部署手册](docs/DEPLOYMENT.md)。
+校验阻止本机 API/RSSHub 地址、缺失服务端密钥、错误 AppID、缺少 Java/Flyway/Redis/容器配置进入发布。完整流程见[部署手册](docs/DEPLOYMENT.md)。
 
 ## 文档
 

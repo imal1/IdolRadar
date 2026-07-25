@@ -27,12 +27,15 @@ x-runtime-environment: &runtime-environment
   IDOLRADAR_WORKER_WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:-}
   IDOLRADAR_WORKER_WECHAT_API_BASE_URL: ${WECHAT_API_BASE_URL:-https://api.weixin.qq.com}
   IDOLRADAR_WORKER_SUBSCRIBE_TEMPLATE_ID: ${SUBSCRIBE_TEMPLATE_ID:-}
+  IDOLRADAR_WORKER_NOTIFICATIONS_ENABLED: ${NOTIFICATIONS_ENABLED:-false}
   IDOLRADAR_WORKER_MINIPROGRAM_STATE: ${MINIPROGRAM_STATE:-formal}
   IDOLRADAR_WORKER_RSS_TIMEOUT: ${RSS_TIMEOUT:-10s}
   IDOLRADAR_WORKER_RSS_MAX_RESPONSE_BYTES: ${RSS_MAX_RESPONSE_BYTES:-2097152}
   IDOLRADAR_WORKER_RSS_MAX_REDIRECTS: ${RSS_MAX_REDIRECTS:-3}
   IDOLRADAR_WORKER_RSS_MAX_ENTRIES_PER_SOURCE: ${RSS_MAX_ENTRIES_PER_SOURCE:-100}
   IDOLRADAR_WORKER_RSS_SOURCE_CONCURRENCY: ${RSS_SOURCE_CONCURRENCY:-4}
+  # 仅精确匹配该 origin 时允许 Worker 访问开发机上的 HTTP/私网 RSSHub。
+  IDOLRADAR_WORKER_RSS_TRUSTED_ORIGINS: ${RSS_TRUSTED_ORIGINS:-http://host.docker.internal:1200}
   IDOLRADAR_WORKER_NOTIFICATION_CONCURRENCY: ${NOTIFY_CONCURRENCY:-8}
   IDOLRADAR_WORKER_NOTIFICATION_LEASE: ${NOTIFICATION_LEASE:-15m}
   IDOLRADAR_WORKER_NOTIFICATION_MAX_ATTEMPTS: ${NOTIFICATION_MAX_ATTEMPTS:-5}
@@ -99,6 +102,7 @@ services:
       APP_MODE: seed
       SPRING_FLYWAY_ENABLED: "false"
       IDOLRADAR_SEED_DIRECTORY: /app/database
+      IDOLRADAR_SEED_RSSHUB_BASE_URL: ${RSSHUB_BASE_URL:-http://host.docker.internal:1200}
     volumes:
       # database/ 仍在仓库根；compose 现位于 backend/，故用 ../database 指回根目录 seed。
       - ../database:/app/database:ro
@@ -122,6 +126,9 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+    extra_hosts:
+      # Linux Docker 也可访问宿主机 pnpm 启动的 RSSHub；Docker Desktop 同样兼容。
+      - "host.docker.internal:host-gateway"
     restart: "no"
 
   app:
