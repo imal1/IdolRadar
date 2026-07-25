@@ -26,16 +26,21 @@ jobs:
       - name: PostgreSQL migration and seed integration tests
         run: mvn -B -f backend/pom.xml -Pintegration-test -Didolradar.it.enabled=true verify
 
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
-          cache: npm
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Mini program contract and release checks
         run: |
-          npm ci --ignore-scripts
-          npm test
-          npm run validate
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm test
+          pnpm run validate
           docker compose -f backend/compose.yaml config --quiet
 
       - name: Production image build
