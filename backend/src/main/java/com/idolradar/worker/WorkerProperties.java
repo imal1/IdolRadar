@@ -2,6 +2,8 @@ package com.idolradar.worker;
 
 import java.net.URI;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -16,23 +18,27 @@ public class WorkerProperties {
     private String wechatAppSecret = "";
     private URI wechatApiBaseUrl = URI.create("https://api.weixin.qq.com");
     private String subscribeTemplateId = "";
+    private boolean notificationsEnabled = true;
     private String miniprogramState = "formal";
     private Duration rssTimeout = Duration.ofSeconds(10);
     private int rssMaxResponseBytes = 2 * 1024 * 1024;
     private int rssMaxRedirects = 3;
     private int rssMaxEntriesPerSource = 100;
     private int rssSourceConcurrency = 4;
+    private List<URI> rssTrustedOrigins = new ArrayList<>();
     private int notificationConcurrency = 8;
     private Duration notificationLease = Duration.ofMinutes(15);
     private int notificationMaxAttempts = 5;
     private Duration notificationRetryBase = Duration.ofMinutes(1);
 
     public void validateForRun() {
-        requireText(wechatAppId, "idolradar.worker.wechat-app-id");
-        requireText(wechatAppSecret, "idolradar.worker.wechat-app-secret");
-        requireText(subscribeTemplateId, "idolradar.worker.subscribe-template-id");
-        if (!"https".equalsIgnoreCase(wechatApiBaseUrl.getScheme())) {
-            throw new IllegalStateException("idolradar.worker.wechat-api-base-url must use HTTPS");
+        if (notificationsEnabled) {
+            requireText(wechatAppId, "idolradar.worker.wechat-app-id");
+            requireText(wechatAppSecret, "idolradar.worker.wechat-app-secret");
+            requireText(subscribeTemplateId, "idolradar.worker.subscribe-template-id");
+            if (!"https".equalsIgnoreCase(wechatApiBaseUrl.getScheme())) {
+                throw new IllegalStateException("idolradar.worker.wechat-api-base-url must use HTTPS");
+            }
         }
         if (!java.util.Set.of("developer", "trial", "formal").contains(miniprogramState)) {
             throw new IllegalStateException("idolradar.worker.miniprogram-state is invalid");
@@ -50,6 +56,22 @@ public class WorkerProperties {
                 || notificationMaxAttempts < 1 || notificationMaxAttempts > 20) {
             throw new IllegalStateException("Worker numeric configuration is invalid");
         }
+        for (URI origin : rssTrustedOrigins) {
+            if (!isHttpOrigin(origin)) {
+                throw new IllegalStateException("idolradar.worker.rss-trusted-origins must contain origins");
+            }
+        }
+    }
+
+    private static boolean isHttpOrigin(URI origin) {
+        if (origin == null || origin.getScheme() == null || origin.getHost() == null
+                || origin.getRawUserInfo() != null || origin.getRawQuery() != null
+                || origin.getRawFragment() != null) {
+            return false;
+        }
+        String path = origin.getRawPath();
+        return java.util.Set.of("http", "https").contains(origin.getScheme().toLowerCase())
+                && (path == null || path.isBlank() || "/".equals(path));
     }
 
     private static void requireText(String value, String name) {
@@ -64,6 +86,8 @@ public class WorkerProperties {
     public void setWechatApiBaseUrl(URI value) { this.wechatApiBaseUrl = value; }
     public String getSubscribeTemplateId() { return subscribeTemplateId; }
     public void setSubscribeTemplateId(String value) { this.subscribeTemplateId = value; }
+    public boolean isNotificationsEnabled() { return notificationsEnabled; }
+    public void setNotificationsEnabled(boolean value) { this.notificationsEnabled = value; }
     public String getMiniprogramState() { return miniprogramState; }
     public void setMiniprogramState(String value) { this.miniprogramState = value; }
     public Duration getRssTimeout() { return rssTimeout; }
@@ -76,6 +100,10 @@ public class WorkerProperties {
     public void setRssMaxEntriesPerSource(int value) { this.rssMaxEntriesPerSource = value; }
     public int getRssSourceConcurrency() { return rssSourceConcurrency; }
     public void setRssSourceConcurrency(int value) { this.rssSourceConcurrency = value; }
+    public List<URI> getRssTrustedOrigins() { return List.copyOf(rssTrustedOrigins); }
+    public void setRssTrustedOrigins(List<URI> value) {
+        this.rssTrustedOrigins = value == null ? new ArrayList<>() : new ArrayList<>(value);
+    }
     public int getNotificationConcurrency() { return notificationConcurrency; }
     public void setNotificationConcurrency(int value) { this.notificationConcurrency = value; }
     public Duration getNotificationLease() { return notificationLease; }

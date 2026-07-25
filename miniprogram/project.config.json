@@ -1,5 +1,4 @@
 {
-<<<<<<< Updated upstream
   "description": "IdolRadar 微信小程序",
   "miniprogramRoot": "./",
   "compileType": "miniprogram",
@@ -24,8 +23,8 @@
     "disableUseStrict": false,
     "useCompilerPlugins": false,
     "condition": false,
-    "swc": false,
-    "disableSWC": true,
+    "swc": true,
+    "disableSWC": false,
     "babelSetting": {
       "ignore": [],
       "disablePlugins": [],
@@ -44,11 +43,3 @@
   },
   "libVersion": "3.17.0"
 }
-=======
-  "setting": {
-    "swc": true,
-    "disableSWC": false,
-    "minified": true
-  }
-}
->>>>>>> Stashed changes

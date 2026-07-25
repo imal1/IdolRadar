@@ -229,16 +229,19 @@ class PostgresMigrationSeedIT {
                         + "\"bio\":\"初始简介\",\"enabled\":true}\n");
         Files.writeString(seedDirectory.resolve("sources.seed.jsonl"),
                 "{\"_id\":\"source-1\",\"idolId\":\"idol-1\","
-                        + "\"rssUrl\":\"https://example.com/feed.xml\","
+                        + "\"rsshubRoute\":\"/weibo/user/5492443184\","
                         + "\"channel\":\"初始频道\",\"enabled\":true,"
                         + "\"lastFetchStatus\":\"never\"}\n");
 
         SeedProperties properties = new SeedProperties();
         properties.setDirectory(seedDirectory);
+        properties.setRsshubBaseUrl(java.net.URI.create("http://rsshub.test:1200"));
         SeedService service = new SeedService(jdbc, new ObjectMapper(), properties);
         SeedService.SeedResult first = service.seed();
         assertEquals(1, first.idols());
         assertEquals(1, first.sources());
+        assertEquals("http://rsshub.test:1200/weibo/user/5492443184", jdbc.queryForObject(
+                "SELECT rss_url FROM sources WHERE id = 'source-1'", String.class));
 
         jdbc.update("UPDATE sources SET last_fetch_status = 'success', "
                 + "last_fetch_item_count = 7, last_fetch_new_count = 3 WHERE id = 'source-1'");

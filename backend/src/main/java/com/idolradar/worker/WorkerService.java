@@ -88,26 +88,33 @@ public class WorkerService {
      */
     public WorkerModels.WorkerRunResult runOnce() {
         properties.validateForRun();
-        wechatProperties.validateForApi();
-        if (!"https".equalsIgnoreCase(wechatProperties.apiBaseUrl().getScheme())) {
-            throw new IllegalStateException("idolradar.wechat.api-base-url must use HTTPS in worker mode");
-        }
-        if (backendProperties.subscribeTemplateId().isBlank()) {
-            throw new IllegalStateException("idolradar.subscribe-template-id is required in worker mode");
+        if (properties.isNotificationsEnabled()) {
+            wechatProperties.validateForApi();
+            if (!"https".equalsIgnoreCase(wechatProperties.apiBaseUrl().getScheme())) {
+                throw new IllegalStateException("idolradar.wechat.api-base-url must use HTTPS in worker mode");
+            }
+            if (backendProperties.subscribeTemplateId().isBlank()) {
+                throw new IllegalStateException("idolradar.subscribe-template-id is required in worker mode");
+            }
         }
         try (Connection lockConnection = dataSource.getConnection()) {
             if (!tryLock(lockConnection)) return WorkerModels.WorkerRunResult.alreadyRunning();
             try {
-                WorkerModels.Reconciliation reconciliation = notificationsRepository
-                        .reconcileStaleDeliveries(properties.getNotificationLease());
-                int recoveredOutbox = notificationsRepository.recoverStaleOutbox();
+                WorkerModels.Reconciliation reconciliation = properties.isNotificationsEnabled()
+                        ? notificationsRepository.reconcileStaleDeliveries(properties.getNotificationLease())
+                        : new WorkerModels.Reconciliation(0, 0);
+                int recoveredOutbox = properties.isNotificationsEnabled()
+                        ? notificationsRepository.recoverStaleOutbox()
+                        : 0;
                 if (recoveredOutbox > 0) {
                     log.warn("Recovered stale notification outbox rows: count={}", recoveredOutbox);
                 }
                 List<WorkerModels.Source> sources = feeds.loadEnabledSources();
                 if (sources.isEmpty()) {
-                    notifications.retryDueDeliveries();
-                    notifications.drainOutbox();
+                    if (properties.isNotificationsEnabled()) {
+                        notifications.retryDueDeliveries();
+                        notifications.drainOutbox();
+                    }
                     throw new IllegalStateException("NO_ENABLED_SOURCES");
                 }
                 List<WorkerModels.SourceResult> results = processSources(sources);
@@ -115,8 +122,12 @@ public class WorkerService {
                 List<WorkerModels.Post> inserted = results.stream()
                         .flatMap(result -> result.newPosts().stream())
                         .toList();
-                WorkerModels.NotificationTotals retryTotals = notifications.retryDueDeliveries();
-                List<WorkerModels.NotificationTotals> notificationTotals = notifications.drainOutbox();
+                WorkerModels.NotificationTotals retryTotals = properties.isNotificationsEnabled()
+                        ? notifications.retryDueDeliveries()
+                        : WorkerModels.NotificationTotals.empty();
+                List<WorkerModels.NotificationTotals> notificationTotals = properties.isNotificationsEnabled()
+                        ? notifications.drainOutbox()
+                        : List.of();
                 if (succeeded == 0) {
                     throw new FeedException("FEED_RUN_FAILED", "所有数据源抓取失败");
                 }

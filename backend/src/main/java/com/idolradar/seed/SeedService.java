@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -51,7 +53,7 @@ public class SeedService {
                 .map(entry -> new SourceSeed(
                         requiredText(entry.node(), "_id", entry.location()),
                         requiredText(entry.node(), "idolId", entry.location()),
-                        requiredText(entry.node(), "rssUrl", entry.location()),
+                        sourceUrl(entry.node(), entry.location()),
                         optionalText(entry.node(), "channel", "RSS", entry.location()),
                         optionalBoolean(entry.node(), "enabled", true, entry.location()),
                         fetchStatus(entry.node(), entry.location())))
@@ -128,6 +130,54 @@ public class SeedService {
     private String requiredText(JsonNode record, String field, String location) {
         JsonNode value = record.get(field);
         if (value == null || !value.isTextual() || value.textValue().isBlank()) {
+            throw new IllegalArgumentException(location + " requires non-blank text field " + field);
+        }
+        return value.textValue().trim();
+    }
+
+    /**
+     * 普通源可直接给 rssUrl；RSSHub 源保存稳定 route，按环境拼接实例 origin。
+     * 这样同一份业务 seed 可在本机 RSSHub 与生产 HTTPS RSSHub 间切换。
+     */
+    private String sourceUrl(JsonNode record, String location) {
+        String rssUrl = nullableText(record, "rssUrl", location);
+        String rsshubRoute = nullableText(record, "rsshubRoute", location);
+        if ((rssUrl == null) == (rsshubRoute == null)) {
+            throw new IllegalArgumentException(location + " requires exactly one of rssUrl or rsshubRoute");
+        }
+        if (rssUrl != null) {
+            return rssUrl;
+        }
+        if (!rsshubRoute.startsWith("/") || rsshubRoute.startsWith("//")) {
+            throw new IllegalArgumentException(location + " has invalid rsshubRoute");
+        }
+        URI base = properties.getRsshubBaseUrl();
+        if (base == null || base.getScheme() == null || base.getHost() == null
+                || base.getRawUserInfo() != null || base.getRawQuery() != null
+                || base.getRawFragment() != null
+                || (base.getRawPath() != null && !base.getRawPath().isBlank()
+                    && !"/".equals(base.getRawPath()))) {
+            throw new IllegalStateException("idolradar.seed.rsshub-base-url must be an origin");
+        }
+        String scheme = base.getScheme().toLowerCase(java.util.Locale.ROOT);
+        if (!java.util.Set.of("http", "https").contains(scheme)) {
+            throw new IllegalStateException("idolradar.seed.rsshub-base-url must use HTTP or HTTPS");
+        }
+        try {
+            String authority = base.getHost().contains(":") ? "[" + base.getHost() + "]" : base.getHost();
+            if (base.getPort() >= 0) authority += ":" + base.getPort();
+            return new URI(scheme, authority, rsshubRoute, null, null).toASCIIString();
+        } catch (URISyntaxException error) {
+            throw new IllegalArgumentException(location + " has invalid rsshubRoute", error);
+        }
+    }
+
+    private String nullableText(JsonNode record, String field, String location) {
+        JsonNode value = record.get(field);
+        if (value == null || value.isNull()) {
+            return null;
+        }
+        if (!value.isTextual() || value.textValue().isBlank()) {
             throw new IllegalArgumentException(location + " requires non-blank text field " + field);
         }
         return value.textValue().trim();

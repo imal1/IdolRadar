@@ -16,6 +16,7 @@ coverage/
 graphify-out/
 node_modules/
 **/node_modules/
+.pnpm-store/
 **/target/
 /backend/maven-settings.xml
 project.private.config.json

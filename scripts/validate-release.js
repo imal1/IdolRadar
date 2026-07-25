@@ -78,7 +78,8 @@ function parseJsonLines(filePath) {
 function walkJson(directory) {
   if (!fs.existsSync(directory)) return;
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-    if (['node_modules', '.git', 'graphify-out'].includes(entry.name)) continue;
+    // rsshub 是由上游独立校验的子模块，避免把其生成物和依赖纳入 IdolRadar 发布扫描。
+    if (['node_modules', '.git', 'graphify-out', 'rsshub'].includes(entry.name)) continue;
     const filePath = path.join(directory, entry.name);
     if (entry.isDirectory()) walkJson(filePath);
     else if (entry.isFile() && entry.name.endsWith('.json')) parseJson(filePath);
@@ -150,11 +151,19 @@ function isPlaceholder(value) {
 
 const requiredFiles = [
   'package.json',
-  'package-lock.json',
+  'pnpm-lock.yaml',
+  'pnpm-workspace.yaml',
   'backend/.env.example',
   'backend/Dockerfile',
   'backend/compose.yaml',
   'backend/compose.prod.yaml',
+  '.gitmodules',
+  'docs/RSSHUB-DEVELOPMENT.md',
+  'packages/test-utils/package.json',
+  'packages/test-utils/index.js',
+  'tests/miniprogram-e2e/package.json',
+  'tests/miniprogram-e2e/vitest.config.js',
+  'tests/miniprogram-e2e/smoke.e2e.vitest.js',
   'miniprogram/project.config.json',
   'miniprogram/app.js',
   'miniprogram/app.json',
@@ -186,6 +195,9 @@ if (fs.existsSync(packagePath)) {
     }
     if (!/^>=24(?:\.0\.0)?$/.test(packageJson.engines?.node || '')) {
       addError('package.json: 可选客户端校验工具要求 Node.js >=24.0.0');
+    }
+    if (!/^pnpm@10\.34\.5(?:\+sha512\.)?/.test(packageJson.packageManager || '')) {
+      addError('package.json: pnpm 版本必须与 RSSHub 子模块保持为 10.34.5');
     }
   }
 }
@@ -303,6 +315,22 @@ if (databaseUrl) {
 for (const name of ['WECHAT_APP_ID', 'WECHAT_APP_SECRET', 'SUBSCRIBE_TEMPLATE_ID']) {
   if (isPlaceholder(dotenv[name])) placeholder(`.env/process: ${name} 仍是占位值或未配置`);
 }
+const rsshubBaseUrl = environmentValue(dotenv, ['RSSHUB_BASE_URL']);
+let parsedRsshubBaseUrl = null;
+try {
+  parsedRsshubBaseUrl = new URL(rsshubBaseUrl);
+  if (parsedRsshubBaseUrl.protocol !== 'https:'
+    || parsedRsshubBaseUrl.username
+    || parsedRsshubBaseUrl.password
+    || parsedRsshubBaseUrl.pathname !== '/'
+    || parsedRsshubBaseUrl.search
+    || parsedRsshubBaseUrl.hash
+    || isPrivateApiHostname(parsedRsshubBaseUrl.hostname)) {
+    throw new Error('unsafe RSSHub origin');
+  }
+} catch {
+  placeholder('.env/process: RSSHUB_BASE_URL 发布必须是公网 HTTPS origin');
+}
 if (dotenv.MINIPROGRAM_STATE !== 'formal') {
   placeholder('.env/process: MINIPROGRAM_STATE 发布必须为 formal');
 }
@@ -327,7 +355,13 @@ const exampleHasSplitDatabase = [
 if (!exampleHasDatabaseUrl && !exampleHasSplitDatabase) {
   addError('backend/.env.example: 须包含 SPRING_DATASOURCE_URL 或完整 POSTGRES_* 数据库变量');
 }
-for (const name of ['WECHAT_APP_ID', 'WECHAT_APP_SECRET', 'SUBSCRIBE_TEMPLATE_ID']) {
+for (const name of [
+  'WECHAT_APP_ID',
+  'WECHAT_APP_SECRET',
+  'SUBSCRIBE_TEMPLATE_ID',
+  'RSSHUB_BASE_URL',
+  'RSS_TRUSTED_ORIGINS'
+]) {
   if (!new RegExp(`^${name}=`, 'm').test(exampleEnv)) addError(`backend/.env.example: 缺少 ${name}`);
 }
 
@@ -423,6 +457,15 @@ if (fs.existsSync(productionComposePath)) {
   }
 }
 
+const gitmodulesPath = path.join(root, '.gitmodules');
+if (fs.existsSync(gitmodulesPath)) {
+  const gitmodules = fs.readFileSync(gitmodulesPath, 'utf8');
+  if (!/path\s*=\s*rsshub\b/.test(gitmodules)
+    || !/url\s*=\s*https:\/\/github\.com\/DIYgod\/RSSHub\.git\b/i.test(gitmodules)) {
+    addError('.gitmodules: rsshub 必须指向 DIYgod/RSSHub 上游源码');
+  }
+}
+
 const idolSeedPath = path.join(seedDir, 'idols.seed.jsonl');
 const sourceSeedPath = path.join(seedDir, 'sources.seed.jsonl');
 if (!fs.existsSync(idolSeedPath)) addError(`缺少发布种子：${idolSeedPath}`);
@@ -440,23 +483,45 @@ for (const idol of idols) {
   }
 }
 for (const source of sources) {
-  if (!source._id || !source.idolId || !source.rssUrl || !source.channel
+  const hasRssUrl = typeof source.rssUrl === 'string' && Boolean(source.rssUrl.trim());
+  const hasRsshubRoute = typeof source.rsshubRoute === 'string' && Boolean(source.rsshubRoute.trim());
+  if (!source._id || !source.idolId || (!hasRssUrl && !hasRsshubRoute)
+    || typeof source.channel !== 'string' || !source.channel.trim()
     || typeof source.enabled !== 'boolean') {
-    addError(`${relative(sourceSeedPath)}: source 必须包含 _id/idolId/rssUrl/channel/enabled`);
+    addError(`${relative(sourceSeedPath)}: source 必须包含 _id/idolId、rssUrl 或 rsshubRoute、channel/enabled`);
+  }
+  if (hasRssUrl === hasRsshubRoute) {
+    addError(`${relative(sourceSeedPath)}: ${source._id || '(unknown)'} 必须且只能配置 rssUrl 或 rsshubRoute`);
   }
   if (source.idolId && !idolIds.has(source.idolId)) {
     addError(`${relative(sourceSeedPath)}: ${source._id || '(unknown)'} 的 idolId 无对应 idol`);
   }
-  try {
-    const url = new URL(source.rssUrl);
-    if (url.protocol !== 'https:' || url.username || url.password || isPrivateApiHostname(url.hostname)) {
-      throw new Error('unsafe RSS URL');
+  if (hasRsshubRoute) {
+    try {
+      const route = new URL(source.rsshubRoute, 'https://rsshub.invalid');
+      if (!source.rsshubRoute.startsWith('/')
+        || source.rsshubRoute.startsWith('//')
+        || route.origin !== 'https://rsshub.invalid'
+        || route.hash) {
+        throw new Error('invalid RSSHub route');
+      }
+    } catch {
+      addError(`${relative(sourceSeedPath)}: ${source._id || '(unknown)'} 的 rsshubRoute 无效`);
     }
-  } catch {
-    const message = `${relative(sourceSeedPath)}: ${source._id || '(unknown)'} 的 rssUrl 不安全或无效`;
-    // example.invalid 只允许通过本地占位校验；正式发布时 placeholder() 仍会转成错误。
-    if (isPlaceholder(source.rssUrl)) placeholder(message);
-    else addError(message);
+    if (!parsedRsshubBaseUrl && !allowPlaceholders) {
+      addError(`${relative(sourceSeedPath)}: RSSHub route 缺少可发布的 RSSHUB_BASE_URL`);
+    }
+  } else if (hasRssUrl) {
+    try {
+      const url = new URL(source.rssUrl);
+      if (url.protocol !== 'https:' || url.username || url.password || isPrivateApiHostname(url.hostname)) {
+        throw new Error('unsafe RSS URL');
+      }
+    } catch {
+      const message = `${relative(sourceSeedPath)}: ${source._id || '(unknown)'} 的 rssUrl 不安全或无效`;
+      if (isPlaceholder(source.rssUrl)) placeholder(message);
+      else addError(message);
+    }
   }
 }
 for (const seedPath of [idolSeedPath, sourceSeedPath]) {

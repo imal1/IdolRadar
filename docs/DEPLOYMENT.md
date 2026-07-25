@@ -10,6 +10,7 @@
 - TLS 1.2+ 公网证书
 - Java 21 容器运行环境；PostgreSQL 17；Redis 7
 - 已获授权的 idol 资料、头像、公开 HTTPS RSS 源
+- 独立部署、可由 Worker 访问的公网 HTTPS RSSHub origin
 - 测试、生产环境和凭证完全隔离
 
 AppSecret、数据库密码、微信 access token、openid、生产数据不得提交 Git。生产使用 Secret Manager；PostgreSQL、Redis 只开放私网。
@@ -30,6 +31,8 @@ WECHAT_APP_SECRET=server-only-secret
 SUBSCRIBE_TEMPLATE_ID=approved-template-id
 MINIPROGRAM_STATE=formal
 LOG_LEVEL=INFO
+RSSHUB_BASE_URL=https://rsshub.example.com
+RSS_TRUSTED_ORIGINS=
 ```
 
 容器内使用 Spring 标准变量：
@@ -72,7 +75,8 @@ docker compose run --rm migrate
 
 ## 4. 正式 seed
 
-仓库 `database/*.seed.jsonl` 使用 `example.invalid`，只能验证结构。生产必须替换为获授权资料和公网 HTTPS RSS。
+仓库 `database/*.seed.jsonl` 包含王一博及 RSSHub 微博 route。生产必须确认内容使用范围，
+并通过 `RSSHUB_BASE_URL` 将 route 绑定到自有公网 HTTPS RSSHub 实例。
 
 ```bash
 node scripts/validate-project.js --seed-dir /absolute/path/production-seeds
@@ -122,6 +126,10 @@ docker compose -f compose.prod.yaml up -d app
 禁止返回或持久化 `session_key`；禁止接受客户端传入 openid。
 
 ## 7. RSS 与推送 Worker
+
+`rsshub/` 是独立 Node.js 源码子项目，不进入 Java 后端镜像。生产 Worker 从数据库读取
+seed 已组装的公网 HTTPS RSSHub Feed。RSSHub 的托管、域名、Cookie 与访问控制需单独部署
+和评审；`WEIBO_COOKIES` 只存在 RSSHub Secret，不能注入 Java 后端。
 
 API 副本不运行定时器。调度平台每 30 分钟启动同一 Java 镜像的 `APP_MODE=worker`：
 

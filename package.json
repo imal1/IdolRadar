@@ -6,10 +6,16 @@
   "engines": {
     "node": ">=24.0.0"
   },
+  "packageManager": "pnpm@10.34.5+sha512.a4ee05f2f73658255bd6a89859c065a45c28a57daefae2c893a168ee2b73168c37b91e83e57ea67654ad03f03031746430e8bce38e362e042605fb8abc80192e",
   "scripts": {
-    "check": "npm run check:syntax && npm test && npm run validate",
+    "check": "pnpm run check:syntax && pnpm test && pnpm run validate",
     "check:syntax": "node scripts/check-syntax.js",
-    "test": "node --test",
+    "test": "node scripts/run-node-tests.mjs",
+    "test:miniprogram:e2e": "pnpm --filter @idolradar/miniprogram-e2e test",
+    "test:miniprogram:e2e:watch": "pnpm --filter @idolradar/miniprogram-e2e test:watch",
+    "rsshub:install": "pnpm --dir rsshub install --frozen-lockfile",
+    "rsshub:dev": "pnpm --dir rsshub dev",
+    "rsshub:test": "pnpm --dir rsshub vitest",
     "validate": "node scripts/validate-project.js --allow-placeholders",
     "validate:release": "node scripts/validate-project.js"
   }

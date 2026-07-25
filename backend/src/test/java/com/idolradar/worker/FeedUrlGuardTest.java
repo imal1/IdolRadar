@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.net.InetAddress;
+import java.net.URI;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
@@ -52,5 +54,22 @@ class FeedUrlGuardTest {
         assertThat(FeedUrlGuard.isUnsafeAddress(InetAddress.getByName("203.0.113.4"))).isTrue();
         assertThat(FeedUrlGuard.isUnsafeAddress(InetAddress.getByName("::ffff:192.168.1.2"))).isTrue();
         assertThat(FeedUrlGuard.isUnsafeAddress(InetAddress.getByName("2001:db8::1"))).isTrue();
+    }
+
+    @Test
+    void allowsPrivateHttpOnlyForExactTrustedRssHubOrigin() throws Exception {
+        FeedUrlGuard guard = new FeedUrlGuard(
+                host -> new InetAddress[] { InetAddress.getByName("127.0.0.1") },
+                List.of(URI.create("http://127.0.0.1:1200")));
+
+        FeedUrlGuard.ValidatedTarget target = guard.validateAndResolve(
+                "http://127.0.0.1:1200/weibo/user/5492443184#ignored");
+
+        assertThat(target.uri().toASCIIString())
+                .isEqualTo("http://127.0.0.1:1200/weibo/user/5492443184");
+        assertThatThrownBy(() -> guard.validateUrl("http://127.0.0.1:1201/feed"))
+                .isInstanceOf(FeedException.class)
+                .extracting(error -> ((FeedException) error).code())
+                .isEqualTo("INVALID_FEED_URL");
     }
 }

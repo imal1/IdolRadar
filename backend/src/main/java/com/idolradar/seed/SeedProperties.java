@@ -1,5 +1,6 @@
 package com.idolradar.seed;
 
+import java.net.URI;
 import java.nio.file.Path;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -8,6 +9,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class SeedProperties {
 
     private Path directory = Path.of("database");
+    private URI rsshubBaseUrl = URI.create("http://127.0.0.1:1200");
 
     public Path getDirectory() {
         return directory;
@@ -15,5 +17,13 @@ public class SeedProperties {
 
     public void setDirectory(Path directory) {
         this.directory = directory;
+    }
+
+    public URI getRsshubBaseUrl() {
+        return rsshubBaseUrl;
+    }
+
+    public void setRsshubBaseUrl(URI rsshubBaseUrl) {
+        this.rsshubBaseUrl = rsshubBaseUrl;
     }
 }

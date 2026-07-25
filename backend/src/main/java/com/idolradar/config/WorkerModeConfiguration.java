@@ -19,6 +19,8 @@ public class WorkerModeConfiguration {
             WechatProperties wechat,
             BackendProperties backend) {
         worker.validateForRun();
+        // RSS-only 联调不持有微信密钥；开启推送时再执行跨 API/Worker 身份一致性门禁。
+        if (!worker.isNotificationsEnabled()) return () -> { };
         wechat.validateForApi();
         if (!Objects.equals(worker.getWechatAppId(), wechat.appId())
                 || !Objects.equals(worker.getWechatAppSecret(), wechat.appSecret())
