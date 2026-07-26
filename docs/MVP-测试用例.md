@@ -51,7 +51,7 @@
 | FETCH-05 | P1 | 条目缺发布时间 | 触发抓取 | `publishedAt` 降级取抓取时间，正常入库 |
 | FETCH-06 | P1 | 源请求超时/404 | 触发抓取 | 记录失败状态，不阻塞其他源，不写脏数据 |
 | FETCH-07 | P2 | 源 `enabled` 置 false | 触发抓取 | 该源被跳过，不请求 |
-| FETCH-08 | P2 | cron/CronJob 已配置 | 等待 30 分钟周期 | worker 按期执行；可见结构化日志；并发触发被 advisory lock 阻止 |
+| FETCH-08 | P2 | Worker 容器定时调度已启用 | 等待 30 分钟周期 | worker 按期执行；可见结构化日志；并发触发被 advisory lock 阻止 |
 
 ## 5. 订阅消息授权与额度
 

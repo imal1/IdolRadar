@@ -1,49 +1,233 @@
-name: idolradar
+# 服务器统一编排：除微信小程序及其自动化测试外，全部运行在 Docker。
+x-database-environment: &database-environment
+  SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-idolradar}
+  SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-idolradar}
+  SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?required}
+  SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${DATABASE_POOL_SIZE:-10}
 
-# 全量 Docker 部署统一从项目根目录编排。
-# 后端、PostgreSQL 与共享 Redis 将由对应维护者补入本文件；服务名请分别保留为
-# app、postgres、redis，使 RSSHub 和后续 Worker 可以通过 Compose 内部 DNS 互联。
+x-runtime-environment: &runtime-environment
+  <<: *database-environment
+  SPRING_DATA_REDIS_HOST: redis
+  SPRING_DATA_REDIS_PORT: 6379
+  SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:?required}
+  SPRING_DATA_REDIS_SSL_ENABLED: "false"
+  SPRING_DATA_REDIS_CONNECT_TIMEOUT: 2s
+  SPRING_DATA_REDIS_TIMEOUT: 2s
+  IDOLRADAR_WECHAT_APP_ID: ${WECHAT_APP_ID:?required}
+  IDOLRADAR_WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:?required}
+  IDOLRADAR_WECHAT_API_BASE_URL: https://api.weixin.qq.com
+  IDOLRADAR_SUBSCRIBE_TEMPLATE_ID: ${SUBSCRIBE_TEMPLATE_ID:-}
+  IDOLRADAR_SESSION_TTL: ${SESSION_TTL:-30d}
+  IDOLRADAR_RATE_LIMIT_IP_LIMIT: ${RATE_LIMIT_IP:-1200}
+  IDOLRADAR_RATE_LIMIT_DEFAULT_LIMIT: ${RATE_LIMIT_USER:-120}
+  IDOLRADAR_RATE_LIMIT_LOGIN_LIMIT: ${RATE_LIMIT_LOGIN:-20}
+  IDOLRADAR_RATE_LIMIT_SUBSCRIPTION_LIMIT: ${RATE_LIMIT_SUBSCRIPTION:-12}
+  IDOLRADAR_WORKER_WECHAT_APP_ID: ${WECHAT_APP_ID:?required}
+  IDOLRADAR_WORKER_WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:?required}
+  IDOLRADAR_WORKER_WECHAT_API_BASE_URL: https://api.weixin.qq.com
+  IDOLRADAR_WORKER_SUBSCRIBE_TEMPLATE_ID: ${SUBSCRIBE_TEMPLATE_ID:-}
+  IDOLRADAR_WORKER_NOTIFICATIONS_ENABLED: ${NOTIFICATIONS_ENABLED:-false}
+  IDOLRADAR_WORKER_MINIPROGRAM_STATE: ${MINIPROGRAM_STATE:-formal}
+  IDOLRADAR_WORKER_RSS_TIMEOUT: ${RSS_TIMEOUT:-10s}
+  IDOLRADAR_WORKER_RSS_MAX_RESPONSE_BYTES: ${RSS_MAX_RESPONSE_BYTES:-2097152}
+  IDOLRADAR_WORKER_RSS_MAX_REDIRECTS: ${RSS_MAX_REDIRECTS:-3}
+  IDOLRADAR_WORKER_RSS_MAX_ENTRIES_PER_SOURCE: ${RSS_MAX_ENTRIES_PER_SOURCE:-100}
+  IDOLRADAR_WORKER_RSS_SOURCE_CONCURRENCY: ${RSS_SOURCE_CONCURRENCY:-4}
+  # RSSHub 仅在私有 Docker 网络提供 HTTP；必须精确加入 Worker 信任 origin。
+  IDOLRADAR_WORKER_RSS_TRUSTED_ORIGINS: ${RSS_TRUSTED_ORIGINS:-http://rsshub:1200}
+  IDOLRADAR_WORKER_NOTIFICATION_CONCURRENCY: ${NOTIFY_CONCURRENCY:-8}
+  IDOLRADAR_WORKER_NOTIFICATION_LEASE: ${NOTIFICATION_LEASE:-15m}
+  IDOLRADAR_WORKER_NOTIFICATION_MAX_ATTEMPTS: ${NOTIFICATION_MAX_ATTEMPTS:-5}
+  IDOLRADAR_WORKER_NOTIFICATION_RETRY_BASE: ${NOTIFICATION_RETRY_BASE:-1m}
+  LOGGING_LEVEL_ROOT: ${LOG_LEVEL:-INFO}
+
+x-backend-service: &backend-service
+  image: ${IDOLRADAR_IMAGE:-idolradar-backend:local}
+  build:
+    context: ./backend
+    dockerfile: Dockerfile
+    args:
+      MAVEN_MIRROR_URL: ${MAVEN_MIRROR_URL:-https://mirrors.cloud.tencent.com/nexus/repository/maven-public/}
+  user: "10001:10001"
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m,noexec,nosuid
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+
 services:
-  # app:
-  #   # TODO(backend): 接入 backend/Dockerfile、迁移任务、Worker 和健康检查。
-  #
-  # postgres:
-  #   # TODO(database): 配置持久化卷、健康检查和独立迁移账号。
-  #
-  # redis:
-  #   # TODO(redis): 提供名为 redis 的缓存服务并配置认证、持久化和内存策略。
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-idolradar}
+      POSTGRES_USER: ${POSTGRES_USER:-idolradar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+    volumes:
+      # 保留旧部署卷名，切换统一 Compose 时继续使用现有 PostgreSQL 数据。
+      - postgres-java-data:/var/lib/postgresql/data
+    # 仅供服务器本机或 SSH 隧道连接，不能暴露公网。
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?required}
+    command: ["sh", "-c", "exec redis-server --appendonly yes --maxmemory-policy noeviction --requirepass \"$$REDIS_PASSWORD\""]
+    volumes:
+      - redis-data:/data
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$${REDIS_PASSWORD} redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # RSSHub 缓存独立，避免淘汰业务 Redis 中的会话、限流和微信 access token。
+  rsshub-cache:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
 
   rsshub:
-    # 从固定的 rsshub submodule 源码构建，确保自定义 route 与主仓库记录的 SHA 一致。
+    # 从固定的 rsshub submodule 源码构建，确保自定义 route 与仓库记录的 SHA 一致。
     build:
       context: ./rsshub
       dockerfile: Dockerfile
       args:
-        # 默认内置 Chromium，覆盖需要浏览器的 RSSHub route；资源受限时可改为 1。
+        # 默认内置 Chromium；资源受限且 route 无浏览器依赖时可改为 1。
         PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "${RSSHUB_PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD:-0}"
-    image: "${RSSHUB_IMAGE:-idolradar-rsshub:local}"
+    image: ${RSSHUB_IMAGE:-idolradar-rsshub:local}
     restart: unless-stopped
     environment:
       NODE_ENV: production
       PORT: "1200"
       CACHE_TYPE: redis
-      # 未来的统一 Redis 服务必须使用 redis 作为 Compose 服务名；若启用认证，
-      # 请通过 RSSHUB_REDIS_URL 注入完整且已正确 URL 编码的连接串。
-      REDIS_URL: "${RSSHUB_REDIS_URL:-redis://redis:6379/}"
+      REDIS_URL: "${RSSHUB_REDIS_URL:-redis://rsshub-cache:6379/}"
       CACHE_EXPIRE: "${RSSHUB_CACHE_EXPIRE:-300}"
       REQUEST_RETRY: "${RSSHUB_REQUEST_RETRY:-2}"
       REQUEST_TIMEOUT: "${RSSHUB_REQUEST_TIMEOUT:-30000}"
-    ports:
-      # 只监听宿主机回环地址，公网 HTTPS 应由后续反向代理服务统一暴露。
-      - "127.0.0.1:${RSSHUB_PORT:-1200}:1200"
+      WEIBO_COOKIES: ${WEIBO_COOKIES:-}
+    depends_on:
+      rsshub-cache:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:1200/healthz"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      interval: 15s
+      timeout: 5s
+      retries: 12
       start_period: 30s
 
-# TODO(database/redis): 在对应服务接入时，于此声明 PostgreSQL 与 Redis 数据卷。
-# volumes:
-#   postgres-data:
-#   redis-data:
+  migrate:
+    <<: *backend-service
+    environment:
+      <<: *database-environment
+      APP_MODE: migrate
+      # Flyway 是唯一 DDL 执行者；API、Worker 均禁用自动迁移。
+      SPRING_FLYWAY_ENABLED: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  seed:
+    <<: *backend-service
+    environment:
+      <<: *database-environment
+      APP_MODE: seed
+      SPRING_FLYWAY_ENABLED: "false"
+      IDOLRADAR_SEED_DIRECTORY: /app/database
+      IDOLRADAR_SEED_RSSHUB_BASE_URL: ${RSSHUB_BASE_URL:-http://rsshub:1200}
+    volumes:
+      - ./database:/app/database:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
+  app:
+    <<: *backend-service
+    restart: unless-stopped
+    environment:
+      <<: *runtime-environment
+      APP_MODE: api
+      SPRING_FLYWAY_ENABLED: "false"
+      SERVER_PORT: 8080
+      SERVER_FORWARD_HEADERS_STRATEGY: framework
+    # 本机健康检查/调试入口；只绑定回环地址，不对公网开放。
+    ports:
+      - "127.0.0.1:${APP_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      seed:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/readyz"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+
+  worker:
+    <<: *backend-service
+    restart: unless-stopped
+    environment:
+      <<: *runtime-environment
+      APP_MODE: worker
+      SPRING_FLYWAY_ENABLED: "false"
+      # 容器常驻；固定延迟从上一轮结束后计算，避免慢抓取任务堆叠。
+      IDOLRADAR_WORKER_SCHEDULE_ENABLED: "true"
+      IDOLRADAR_WORKER_SCHEDULE_INTERVAL: ${WORKER_INTERVAL:-PT30M}
+      IDOLRADAR_WORKER_SCHEDULE_INITIAL_DELAY: ${WORKER_INITIAL_DELAY:-PT5S}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rsshub:
+        condition: service_healthy
+      seed:
+        condition: service_completed_successfully
+
+  nginx:
+    image: nginx:1.29-alpine
+    restart: unless-stopped
+    environment:
+      SERVER_NAME: ${SERVER_NAME:?required}
+      # 只替换域名，保留 Nginx 自身的 $host、$request_uri 等变量。
+      NGINX_ENVSUBST_FILTER: ^SERVER_NAME$
+    volumes:
+      - ./deploy/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ${TLS_CERT_FILE:?required}:/etc/nginx/certs/fullchain.pem:ro
+      - ${TLS_KEY_FILE:?required}:/etc/nginx/certs/private.key:ro
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    depends_on:
+      app:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  postgres-java-data:
+  redis-data:

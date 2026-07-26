@@ -30,6 +30,9 @@ public class WorkerProperties {
     private Duration notificationLease = Duration.ofMinutes(15);
     private int notificationMaxAttempts = 5;
     private Duration notificationRetryBase = Duration.ofMinutes(1);
+    private boolean scheduleEnabled = false;
+    private Duration scheduleInterval = Duration.ofMinutes(30);
+    private Duration scheduleInitialDelay = Duration.ofSeconds(5);
 
     public void validateForRun() {
         if (notificationsEnabled) {
@@ -45,7 +48,10 @@ public class WorkerProperties {
         }
         if (rssTimeout.compareTo(Duration.ofMillis(1)) < 0
                 || notificationLease.compareTo(Duration.ofSeconds(1)) < 0
-                || notificationRetryBase.compareTo(Duration.ofSeconds(1)) < 0) {
+                || notificationRetryBase.compareTo(Duration.ofSeconds(1)) < 0
+                || scheduleInterval.compareTo(Duration.ofMinutes(1)) < 0
+                || scheduleInterval.compareTo(Duration.ofHours(24)) > 0
+                || scheduleInitialDelay.isNegative()) {
             throw new IllegalStateException("Worker durations must be positive");
         }
         if (rssMaxResponseBytes < 1 || rssMaxResponseBytes > 5 * 1024 * 1024
@@ -112,4 +118,10 @@ public class WorkerProperties {
     public void setNotificationMaxAttempts(int value) { this.notificationMaxAttempts = value; }
     public Duration getNotificationRetryBase() { return notificationRetryBase; }
     public void setNotificationRetryBase(Duration value) { this.notificationRetryBase = value; }
+    public boolean isScheduleEnabled() { return scheduleEnabled; }
+    public void setScheduleEnabled(boolean value) { this.scheduleEnabled = value; }
+    public Duration getScheduleInterval() { return scheduleInterval; }
+    public void setScheduleInterval(Duration value) { this.scheduleInterval = value; }
+    public Duration getScheduleInitialDelay() { return scheduleInitialDelay; }
+    public void setScheduleInitialDelay(Duration value) { this.scheduleInitialDelay = value; }
 }

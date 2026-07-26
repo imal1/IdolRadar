@@ -9,6 +9,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -41,6 +42,7 @@ public class FeedUrlGuard {
     private final HostResolver resolver;
     private final List<Origin> trustedOrigins;
 
+    @Autowired
     public FeedUrlGuard(WorkerProperties properties) {
         this(InetAddress::getAllByName, properties.getRssTrustedOrigins());
     }

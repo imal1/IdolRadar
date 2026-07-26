@@ -155,10 +155,9 @@ const requiredFiles = [
   'pnpm-workspace.yaml',
   '.env.example',
   'compose.yaml',
-  'backend/.env.example',
+  'deploy/nginx/default.conf.template',
   'backend/Dockerfile',
-  'backend/compose.yaml',
-  'backend/compose.prod.yaml',
+  'backend/maven-settings.docker.xml',
   '.gitmodules',
   'docs/RSSHUB-DEVELOPMENT.md',
   'packages/test-utils/package.json',
@@ -177,11 +176,13 @@ const requiredFiles = [
   'backend/src/main/java/com/idolradar/web/ApiController.java',
   'backend/src/main/java/com/idolradar/auth/AuthService.java',
   'backend/src/main/java/com/idolradar/worker/WorkerService.java',
+  'backend/src/main/java/com/idolradar/worker/WorkerScheduler.java',
   'backend/src/main/java/com/idolradar/web/PreAuthRateLimitInterceptor.java',
   'backend/src/main/resources/application.yml',
   'backend/src/main/resources/db/migration/V1__init.sql',
   'backend/src/main/resources/db/migration/V2__notification_delivery_state.sql',
   'backend/src/main/resources/db/migration/V3__notification_outbox.sql',
+  'backend/src/main/resources/db/migration/V4__remove_legacy_demo_catalog.sql',
   'database/idols.seed.jsonl',
   'database/sources.seed.jsonl'
 ];
@@ -213,6 +214,19 @@ if (fs.existsSync(outboxMigrationPath)) {
   if (!/CREATE TABLE notification_outbox\b/i.test(migration)
     || !/status IN \('pending', 'processing', 'retryable', 'completed'\)/i.test(migration)) {
     addError('V3__notification_outbox.sql: 缺少持久化通知 outbox 或状态约束');
+  }
+}
+
+const demoCleanupMigrationPath = path.join(
+  root,
+  'backend/src/main/resources/db/migration/V4__remove_legacy_demo_catalog.sql'
+);
+if (fs.existsSync(demoCleanupMigrationPath)) {
+  const migration = fs.readFileSync(demoCleanupMigrationPath, 'utf8');
+  for (const demoId of ['idol_demo_lin_wan', 'idol_demo_su_nian']) {
+    if (!migration.includes(demoId)) {
+      addError(`V4__remove_legacy_demo_catalog.sql: 未清理历史示例 ${demoId}`);
+    }
   }
 }
 
@@ -318,20 +332,27 @@ for (const name of ['WECHAT_APP_ID', 'WECHAT_APP_SECRET', 'SUBSCRIBE_TEMPLATE_ID
   if (isPlaceholder(dotenv[name])) placeholder(`.env/process: ${name} 仍是占位值或未配置`);
 }
 const rsshubBaseUrl = environmentValue(dotenv, ['RSSHUB_BASE_URL']);
+const rssTrustedOrigins = environmentValue(dotenv, ['RSS_TRUSTED_ORIGINS'])
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
 let parsedRsshubBaseUrl = null;
 try {
   parsedRsshubBaseUrl = new URL(rsshubBaseUrl);
-  if (parsedRsshubBaseUrl.protocol !== 'https:'
+  const dockerInternalRsshub = parsedRsshubBaseUrl.origin === 'http://rsshub:1200'
+    && rssTrustedOrigins.includes(parsedRsshubBaseUrl.origin);
+  const publicHttpsRsshub = parsedRsshubBaseUrl.protocol === 'https:'
+    && !isPrivateApiHostname(parsedRsshubBaseUrl.hostname);
+  if ((!dockerInternalRsshub && !publicHttpsRsshub)
     || parsedRsshubBaseUrl.username
     || parsedRsshubBaseUrl.password
     || parsedRsshubBaseUrl.pathname !== '/'
     || parsedRsshubBaseUrl.search
-    || parsedRsshubBaseUrl.hash
-    || isPrivateApiHostname(parsedRsshubBaseUrl.hostname)) {
+    || parsedRsshubBaseUrl.hash) {
     throw new Error('unsafe RSSHub origin');
   }
 } catch {
-  placeholder('.env/process: RSSHUB_BASE_URL 发布必须是公网 HTTPS origin');
+  placeholder('.env/process: RSSHUB_BASE_URL 必须是公网 HTTPS origin，或受信任的 http://rsshub:1200');
 }
 if (dotenv.MINIPROGRAM_STATE !== 'formal') {
   placeholder('.env/process: MINIPROGRAM_STATE 发布必须为 formal');
@@ -345,8 +366,8 @@ if (!isPlaceholder(dotenv.SUBSCRIBE_TEMPLATE_ID)
   addError('客户端 subscribeTemplateId 与服务端 SUBSCRIBE_TEMPLATE_ID 不一致');
 }
 
-const exampleEnv = fs.existsSync(path.join(root, 'backend/.env.example'))
-  ? fs.readFileSync(path.join(root, 'backend/.env.example'), 'utf8')
+const exampleEnv = fs.existsSync(path.join(root, '.env.example'))
+  ? fs.readFileSync(path.join(root, '.env.example'), 'utf8')
   : '';
 const exampleHasDatabaseUrl = /^SPRING_DATASOURCE_URL=/m.test(exampleEnv);
 const exampleHasSplitDatabase = [
@@ -355,16 +376,20 @@ const exampleHasSplitDatabase = [
   ['POSTGRES_PASSWORD']
 ].every((names) => names.some((name) => new RegExp(`^${name}=`, 'm').test(exampleEnv)));
 if (!exampleHasDatabaseUrl && !exampleHasSplitDatabase) {
-  addError('backend/.env.example: 须包含 SPRING_DATASOURCE_URL 或完整 POSTGRES_* 数据库变量');
+  addError('.env.example: 须包含 SPRING_DATASOURCE_URL 或完整 POSTGRES_* 数据库变量');
 }
 for (const name of [
   'WECHAT_APP_ID',
   'WECHAT_APP_SECRET',
   'SUBSCRIBE_TEMPLATE_ID',
   'RSSHUB_BASE_URL',
-  'RSS_TRUSTED_ORIGINS'
+  'RSS_TRUSTED_ORIGINS',
+  'SERVER_NAME',
+  'TLS_CERT_FILE',
+  'TLS_KEY_FILE',
+  'WORKER_INTERVAL'
 ]) {
-  if (!new RegExp(`^${name}=`, 'm').test(exampleEnv)) addError(`backend/.env.example: 缺少 ${name}`);
+  if (!new RegExp(`^${name}=`, 'm').test(exampleEnv)) addError(`.env.example: 缺少 ${name}`);
 }
 
 const appSource = fs.existsSync(path.join(root, 'miniprogram/app.js'))
@@ -393,20 +418,45 @@ if (fs.existsSync(migrationPath)) {
   }
 }
 
-const composePath = path.join(root, 'backend/compose.yaml');
+const composePath = path.join(root, 'compose.yaml');
 if (fs.existsSync(composePath)) {
   const compose = fs.readFileSync(composePath, 'utf8');
-  for (const service of ['postgres:', 'redis:', 'migrate:', 'app:', 'fetch-feeds:']) {
-    if (!compose.includes(service)) addError(`backend/compose.yaml: 缺少 ${service.slice(0, -1)} 服务`);
+  for (const service of [
+    'postgres:',
+    'redis:',
+    'rsshub-cache:',
+    'rsshub:',
+    'migrate:',
+    'seed:',
+    'app:',
+    'worker:',
+    'nginx:'
+  ]) {
+    if (!compose.includes(service)) addError(`compose.yaml: 缺少 ${service.slice(0, -1)} 服务`);
   }
   if (!compose.includes('127.0.0.1:${POSTGRES_PORT:-5432}:5432')) {
-    addError('backend/compose.yaml: PostgreSQL 端口必须仅绑定 127.0.0.1');
+    addError('compose.yaml: PostgreSQL 端口必须仅绑定 127.0.0.1');
   }
   if (!compose.includes('127.0.0.1:${REDIS_PORT:-6379}:6379')) {
-    addError('backend/compose.yaml: Redis 端口必须仅绑定 127.0.0.1');
+    addError('compose.yaml: Redis 端口必须仅绑定 127.0.0.1');
   }
-  if (/command:\s*\[[^\]]*node/i.test(compose)) {
-    addError('backend/compose.yaml: 生产服务不得执行 Node.js');
+  if (!compose.includes('127.0.0.1:${APP_PORT:-8080}:8080')) {
+    addError('compose.yaml: Java API 调试端口必须仅绑定 127.0.0.1');
+  }
+  if (!/context:\s*\.\/backend/.test(compose)) {
+    addError('compose.yaml: Java 镜像构建上下文必须限制为 backend/');
+  }
+  if (/1200:1200/.test(compose)) {
+    addError('compose.yaml: RSSHub 不得直接暴露公网端口');
+  }
+  if (!/IDOLRADAR_WORKER_SCHEDULE_ENABLED:\s*"true"/.test(compose)
+    || !/IDOLRADAR_WORKER_SCHEDULE_INTERVAL:/.test(compose)) {
+    addError('compose.yaml: Worker 必须在容器内启用周期调度');
+  }
+  if (!/migrate:[\s\S]*?SPRING_FLYWAY_ENABLED:\s*"true"/.test(compose)
+    || !/app:[\s\S]*?SPRING_FLYWAY_ENABLED:\s*"false"/.test(compose)
+    || !/worker:[\s\S]*?SPRING_FLYWAY_ENABLED:\s*"false"/.test(compose)) {
+    addError('compose.yaml: Flyway 只能由 migrate 服务执行');
   }
   for (const name of [
     'SPRING_DATASOURCE_URL',
@@ -419,7 +469,7 @@ if (fs.existsSync(composePath)) {
     'IDOLRADAR_WORKER_NOTIFICATION_MAX_ATTEMPTS'
   ]) {
     if (!new RegExp(`^\\s+${name}:`, 'm').test(compose)) {
-      addError(`backend/compose.yaml: 缺少运行变量 ${name}`);
+      addError(`compose.yaml: 缺少运行变量 ${name}`);
     }
   }
 }
@@ -432,30 +482,6 @@ if (fs.existsSync(dockerfilePath)) {
   }
   if (!/^USER\s+idolradar\s*$/m.test(dockerfile)) {
     addError('backend/Dockerfile: 运行阶段必须使用非 root 用户 idolradar');
-  }
-}
-
-const productionComposePath = path.join(root, 'backend/compose.prod.yaml');
-if (fs.existsSync(productionComposePath)) {
-  const productionCompose = fs.readFileSync(productionComposePath, 'utf8');
-  for (const requiredSecret of [
-    'IDOLRADAR_IMAGE',
-    'MIGRATION_DATASOURCE_PASSWORD',
-    'SPRING_DATASOURCE_PASSWORD',
-    'REDIS_PASSWORD',
-    'WECHAT_APP_SECRET',
-    'SUBSCRIBE_TEMPLATE_ID'
-  ]) {
-    if (!productionCompose.includes(`\${${requiredSecret}:?required}`)) {
-      addError(`backend/compose.prod.yaml: ${requiredSecret} 必须为强制注入变量`);
-    }
-  }
-  if (!/SPRING_DATA_REDIS_SSL_ENABLED:\s*"true"/.test(productionCompose)) {
-    addError('backend/compose.prod.yaml: 托管 Redis 必须启用 TLS');
-  }
-  if (!/migrate:[\s\S]*?SPRING_FLYWAY_ENABLED:\s*"true"/.test(productionCompose)
-    || !/app:[\s\S]*?SPRING_FLYWAY_ENABLED:\s*"false"/.test(productionCompose)) {
-    addError('backend/compose.prod.yaml: Flyway 只能由 migrate 服务执行');
   }
 }
 

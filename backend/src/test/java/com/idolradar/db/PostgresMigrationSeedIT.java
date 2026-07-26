@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
+import org.flywaydb.core.api.MigrationVersion;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
@@ -45,6 +46,7 @@ class PostgresMigrationSeedIT {
     private JdbcTemplate jdbc;
     private DataSource testDataSource;
     private String schema;
+    private DatabaseCredentials credentials;
 
     @BeforeAll
     void migrateDatabase() {
@@ -54,7 +56,7 @@ class PostgresMigrationSeedIT {
         Assumptions.assumeTrue(Boolean.parseBoolean(enabled),
                 "enable with -Didolradar.it.enabled=true or IDOLRADAR_IT_ENABLED=true");
 
-        DatabaseCredentials credentials = databaseCredentials();
+        credentials = databaseCredentials();
         DataSource adminDataSource = dataSource(credentials, null);
         adminJdbc = new JdbcTemplate(adminDataSource);
         schema = "idolradar_it_" + UUID.randomUUID().toString().replace("-", "");
@@ -272,6 +274,64 @@ class PostgresMigrationSeedIT {
         assertEquals(second, service.seed());
         assertEquals(updatedAt, jdbc.queryForObject(
                 "SELECT updated_at FROM sources WHERE id = 'source-1'", OffsetDateTime.class));
+    }
+
+    @Test
+    @Order(5)
+    void v4RemovesOnlyLegacyDemoCatalogAndKeepsUserAccount() {
+        String cleanupSchema = "idolradar_cleanup_" + UUID.randomUUID().toString().replace("-", "");
+        adminJdbc.execute("CREATE SCHEMA " + cleanupSchema);
+        try {
+            DataSource cleanupDataSource = dataSource(credentials, cleanupSchema);
+            JdbcTemplate cleanup = new JdbcTemplate(cleanupDataSource);
+            Flyway.configure()
+                    .dataSource(cleanupDataSource)
+                    .defaultSchema(cleanupSchema)
+                    .schemas(cleanupSchema)
+                    .locations("classpath:db/migration")
+                    .target(MigrationVersion.fromVersion("3"))
+                    .load()
+                    .migrate();
+
+            cleanup.update("INSERT INTO idols (id, name) VALUES "
+                    + "('idol_demo_lin_wan', '林晚'), ('idol_demo_su_nian', '苏念'), ('idol-real', '真实人物')");
+            cleanup.update("INSERT INTO sources (id, idol_id, rss_url) VALUES "
+                    + "('source_demo_lin_wan_official', 'idol_demo_lin_wan', 'https://example.com/demo'), "
+                    + "('source-real', 'idol-real', 'https://example.com/real')");
+            cleanup.update("INSERT INTO posts "
+                    + "(id, idol_id, source_id, title, link, published_at, fetched_at) VALUES "
+                    + "('post-demo', 'idol_demo_lin_wan', 'source_demo_lin_wan_official', '演示', "
+                    + "'https://example.com/demo/post', now(), now())");
+            UUID userId = cleanup.queryForObject(
+                    "INSERT INTO users (openid, idol_id, guarding_since) "
+                            + "VALUES ('openid-demo', 'idol_demo_lin_wan', now()) RETURNING id",
+                    UUID.class);
+            cleanup.update("INSERT INTO notification_outbox (idol_id, post_id) "
+                    + "VALUES ('idol_demo_lin_wan', 'post-demo')");
+
+            Flyway.configure()
+                    .dataSource(cleanupDataSource)
+                    .defaultSchema(cleanupSchema)
+                    .schemas(cleanupSchema)
+                    .locations("classpath:db/migration")
+                    .load()
+                    .migrate();
+
+            assertEquals(0L, cleanup.queryForObject(
+                    "SELECT count(*) FROM idols WHERE id LIKE 'idol_demo_%'", Long.class));
+            assertEquals(0L, cleanup.queryForObject(
+                    "SELECT count(*) FROM posts WHERE id = 'post-demo'", Long.class));
+            assertEquals(0L, cleanup.queryForObject(
+                    "SELECT count(*) FROM notification_outbox WHERE post_id = 'post-demo'", Long.class));
+            assertEquals(1L, cleanup.queryForObject(
+                    "SELECT count(*) FROM idols WHERE id = 'idol-real'", Long.class));
+            assertEquals(1L, cleanup.queryForObject(
+                    "SELECT count(*) FROM users WHERE id = ? AND idol_id IS NULL AND guarding_since IS NULL",
+                    Long.class,
+                    userId));
+        } finally {
+            adminJdbc.execute("DROP SCHEMA " + cleanupSchema + " CASCADE");
+        }
     }
 
     private DatabaseCredentials databaseCredentials() {
