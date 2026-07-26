@@ -27,8 +27,9 @@
 miniprogram/             微信小程序（开发者工具项目根，含 project.config.json）
 backend/src/main/java/   Spring Boot API、认证、RSS Worker、推送、seed
 backend/src/main/resources/db/migration/  PostgreSQL migration
-backend/Dockerfile 等     后端镜像与部署配置（Dockerfile、compose*.yaml、.env.example）
-rsshub/                  RSSHub 上游源码子模块，用于 route 开发
+compose.yaml/.env.example 全量 Docker 部署根入口（RSSHub 已接入，其余服务迁移中）
+backend/                 Spring Boot 后端、Dockerfile 与后端单独开发配置
+rsshub/                  指向 imal1/RSSHub 的源码子模块，用于 route 开发和镜像构建
 packages/test-utils/      RSSHub/小程序测试可复用的纯 Node.js 工具
 database/                王一博与 RSSHub 微博 route seed
 tests/miniprogram-e2e/    Vitest + miniprogram-automator 小程序 E2E
@@ -40,7 +41,7 @@ docs/                    PRD、功能设计、测试与部署手册
 
 要求：Docker。真实登录还需要真实小程序 AppID/AppSecret；只检查服务健康时可暂留占位值。
 
-部署配置集中在 `backend/`，Docker 相关命令都在该目录下执行：
+后端当前的单独开发配置仍在 `backend/`，相关命令在该目录下执行：
 
 ```bash
 cp backend/.env.example backend/.env

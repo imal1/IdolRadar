@@ -1,3 +1,4 @@
 [submodule "rsshub"]
 	path = rsshub
-	url = https://github.com/DIYgod/RSSHub.git
+	url = https://github.com/imal1/RSSHub.git
+	branch = master
