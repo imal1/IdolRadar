@@ -6,10 +6,26 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.net.InetAddress;
 import java.net.URI;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.core.env.MapPropertySource;
 
 class FeedUrlGuardTest {
+    @Test
+    void springUsesTheProductionConstructorWhenTestConstructorsAlsoExist() {
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+            context.getEnvironment().getPropertySources().addFirst(
+                    new MapPropertySource("test", Map.of("app.mode", "worker")));
+            context.registerBean(WorkerProperties.class);
+            context.registerBean(FeedUrlGuard.class);
+            context.refresh();
+
+            assertThat(context.getBean(FeedUrlGuard.class)).isNotNull();
+        }
+    }
+
     @Test
     void acceptsHttpsAndPinsOnlyPublicAddresses() throws Exception {
         FeedUrlGuard guard = new FeedUrlGuard(host -> new InetAddress[] {

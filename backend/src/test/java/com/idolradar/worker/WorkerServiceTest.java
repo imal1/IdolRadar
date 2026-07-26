@@ -69,17 +69,51 @@ class WorkerServiceTest {
     }
 
     @Test
-    void drainsPersistedOutboxEvenWhenNoFeedSourceIsEnabled() throws Exception {
-        DataSource dataSource = mock(DataSource.class);
-        Connection connection = mock(Connection.class);
-        PreparedStatement statement = mock(PreparedStatement.class);
-        ResultSet result = mock(ResultSet.class);
-        when(dataSource.getConnection()).thenReturn(connection);
-        when(connection.prepareStatement(anyString())).thenReturn(statement);
-        when(statement.executeQuery()).thenReturn(result);
-        when(result.next()).thenReturn(true);
-        when(result.getBoolean(1)).thenReturn(true);
+    void fetchesPersistsAndDrainsNotificationOutboxInOneRun() throws Exception {
+        String rss = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <rss version="2.0"><channel><title>测试源</title>
+                  <item>
+                    <title>真实动态</title>
+                    <link>https://example.com/post/1</link>
+                    <pubDate>Sat, 25 Jul 2026 08:30:00 GMT</pubDate>
+                  </item>
+                </channel></rss>
+                """;
+        FeedRepository feeds = mock(FeedRepository.class);
+        when(feeds.loadEnabledSources()).thenReturn(List.of(new WorkerModels.Source(
+                "source-1", "idol-1", "https://example.com/feed.xml", "微博")));
+        when(feeds.insertPostAndEnqueue(any())).thenAnswer(call -> Optional.of(call.getArgument(0)));
+        NotificationRepository notificationRepository = mock(NotificationRepository.class);
+        NotificationService notifications = mock(NotificationService.class);
+        WorkerProperties properties = workerProperties();
+        when(notificationRepository.reconcileStaleDeliveries(properties.getNotificationLease()))
+                .thenReturn(new WorkerModels.Reconciliation(0, 0));
+        when(notifications.retryDueDeliveries()).thenReturn(WorkerModels.NotificationTotals.empty());
+        when(notifications.drainOutbox()).thenReturn(List.of(WorkerModels.NotificationTotals.empty()));
 
+        WorkerService service = new WorkerService(
+                lockedDataSource(),
+                feeds,
+                url -> rss.getBytes(StandardCharsets.UTF_8),
+                new FeedParser(),
+                notificationRepository,
+                notifications,
+                properties,
+                new BackendProperties(Duration.ofDays(30), "template-1"),
+                new WechatProperties(
+                        "app-id", "app-secret", URI.create("https://api.weixin.qq.com"), Duration.ofSeconds(10)));
+
+        WorkerModels.WorkerRunResult result = service.runOnce();
+
+        assertThat(result.postsInserted()).isEqualTo(1);
+        assertThat(result.sourcesSucceeded()).isEqualTo(1);
+        verify(feeds).insertPostAndEnqueue(any());
+        verify(notifications).drainOutbox();
+    }
+
+    @Test
+    void drainsPersistedOutboxEvenWhenNoFeedSourceIsEnabled() throws Exception {
         FeedRepository feeds = mock(FeedRepository.class);
         NotificationRepository notificationRepository = mock(NotificationRepository.class);
         NotificationService notifications = mock(NotificationService.class);
@@ -91,7 +125,7 @@ class WorkerServiceTest {
         when(notifications.drainOutbox()).thenReturn(List.of(WorkerModels.NotificationTotals.empty()));
 
         WorkerService service = new WorkerService(
-                dataSource,
+                lockedDataSource(),
                 feeds,
                 mock(FeedDownloader.class),
                 new FeedParser(),
@@ -107,6 +141,19 @@ class WorkerServiceTest {
                 .hasMessage("NO_ENABLED_SOURCES");
         verify(notificationRepository).recoverStaleOutbox();
         verify(notifications).drainOutbox();
+    }
+
+    private static DataSource lockedDataSource() throws Exception {
+        DataSource dataSource = mock(DataSource.class);
+        Connection connection = mock(Connection.class);
+        PreparedStatement statement = mock(PreparedStatement.class);
+        ResultSet result = mock(ResultSet.class);
+        when(dataSource.getConnection()).thenReturn(connection);
+        when(connection.prepareStatement(anyString())).thenReturn(statement);
+        when(statement.executeQuery()).thenReturn(result);
+        when(result.next()).thenReturn(true);
+        when(result.getBoolean(1)).thenReturn(true);
+        return dataSource;
     }
 
     private static WorkerProperties workerProperties() {

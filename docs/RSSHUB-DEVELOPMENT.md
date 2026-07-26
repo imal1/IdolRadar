@@ -2,7 +2,8 @@
 
 ## RSSHub 源码子项目
 
-`rsshub/` 是 `DIYgod/RSSHub` 的 Git 子模块，不是 Docker 部署包装。首次克隆主仓库后：
+`rsshub/` 是 `DIYgod/RSSHub` 的 Git 子模块，仅用于开发、调试自定义 route。正式统一
+编排直接使用 `compose.yaml` 中的 RSSHub 镜像。需要修改上游源码时再初始化子模块：
 
 ```bash
 git submodule update --init --depth 1
@@ -33,7 +34,7 @@ RSSHub 上游已经提供 `/weibo/user/:uid`，无需维护重复的自定义 ro
 为 `5492443184`；仓库 seed 保存 `/weibo/user/5492443184`，Java seed 会用
 `RSSHUB_BASE_URL` 拼成完整 Feed URL。
 
-终端一，在仓库根目录启动 RSSHub：
+本机直接开发 RSSHub 源码时：
 
 ```powershell
 # 部分微博账号需要登录态。Cookie 只放进当前进程环境，禁止写入 Git。
@@ -47,23 +48,18 @@ pnpm run rsshub:dev
 Invoke-WebRequest http://127.0.0.1:1200/weibo/user/5492443184
 ```
 
-终端二，复制 `backend/.env.example` 为 `backend/.env`。本机默认值会让容器通过
-`host.docker.internal:1200` 访问宿主机 RSSHub。保持 `NOTIFICATIONS_ENABLED=false` 可在
-没有微信密钥时单独验收 RSS 入库。然后执行：
+统一 Docker 链路复制根 `.env.example` 为 `.env`，填写 `WEIBO_COOKIES`。保持
+`NOTIFICATIONS_ENABLED=false` 可在没有微信密钥时单独验收 RSS 入库：
 
 ```powershell
-Set-Location backend
-docker compose up -d postgres redis
-docker compose run --rm migrate
-docker compose --profile tools run --rm seed
-docker compose --profile jobs run --rm fetch-feeds
+docker compose up -d --build
+docker compose exec rsshub curl -f http://127.0.0.1:1200/weibo/user/5492443184
 docker compose exec postgres psql -U idolradar -d idolradar -c `
   "SELECT channel, title, link, published_at FROM posts WHERE idol_id = 'idol_wang_yibo' ORDER BY published_at DESC LIMIT 10;"
 ```
 
-`RSS_TRUSTED_ORIGINS` 只为精确匹配的本地 RSSHub origin 放开 HTTP/私网访问；其他 Feed
-仍强制公网 HTTPS、DNS pin 和重定向复验。生产设置公网 HTTPS `RSSHUB_BASE_URL`，通常把
-`RSS_TRUSTED_ORIGINS` 留空。
+`RSS_TRUSTED_ORIGINS=http://rsshub:1200` 只为 Docker 私网 RSSHub 精确放开 HTTP/私网
+访问；其他 Feed 仍强制公网 HTTPS、DNS pin 和重定向复验。
 
 ## 依赖共享边界
 

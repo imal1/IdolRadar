@@ -1,11 +1,13 @@
 package com.idolradar;
 
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.idolradar.seed.SeedService;
 import com.idolradar.worker.WorkerModels;
+import com.idolradar.worker.WorkerProperties;
 import com.idolradar.worker.WorkerService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,11 +16,12 @@ import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.context.event.ContextClosedEvent;
 import org.springframework.core.env.MapPropertySource;
 
 /**
- * 统一启动入口：同一镜像通过 {@code APP_MODE} 运行 API、迁移、种子数据或单次 Worker。
- * 命令模式不会启动 Web 容器，便于部署系统按任务退出码判断成功与否。
+ * 统一启动入口：同一镜像通过 {@code APP_MODE} 运行 API、迁移、种子数据或 Worker。
+ * 命令模式不启动 Web 容器；Worker 可按配置单次退出或常驻调度。
  */
 @SpringBootApplication
 @ConfigurationPropertiesScan
@@ -43,6 +46,12 @@ public class IdolRadarApplication {
         log.info("IdolRadar 启动成功，运行模式：{}", mode);
         if ("api".equals(mode)) {
             // API 生命周期交给 Spring Web 容器管理；命令模式则继续执行并主动退出。
+            return;
+        }
+        if ("worker".equals(mode) && context.getBean(WorkerProperties.class).isScheduleEnabled()) {
+            // 非 Web 应用没有容器主线程；main 必须等待关闭事件，避免 JVM 在首次调度前退出。
+            log.info("Worker 定时调度已启用");
+            awaitScheduledWorkerShutdown(context);
             return;
         }
 
@@ -71,6 +80,19 @@ public class IdolRadarApplication {
             System.out.println(context.getBean(ObjectMapper.class).writeValueAsString(payload));
         } catch (JsonProcessingException error) {
             System.out.println("{\"event\":\"command_completed\",\"serialization\":\"failed\"}");
+        }
+    }
+
+    private static void awaitScheduledWorkerShutdown(ConfigurableApplicationContext context) {
+        CountDownLatch shutdown = new CountDownLatch(1);
+        context.addApplicationListener(event -> {
+            if (event instanceof ContextClosedEvent) shutdown.countDown();
+        });
+        try {
+            shutdown.await();
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            context.close();
         }
     }
 

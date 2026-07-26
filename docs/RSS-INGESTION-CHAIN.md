@@ -2,15 +2,15 @@
 
 ## 1. 当前结论
 
-当前代码链路已经接通，但尚未完成真实 PostgreSQL 端到端运行验收，因此不能认定为
-100% 生产可用。
+代码、数据库迁移、幂等 seed、Worker 入库与通知 outbox 已通过单元测试和 PostgreSQL
+Testcontainers 集成测试。服务器仍需用真实 Cookie 完成 RSSHub 到小程序通知的人工验收。
 
 已确认：
 
 - RSSHub `/weibo/user/5492443184` 实际抓取王一博微博成功，返回 HTTP 200 和 10 条动态。
 - 后端已经实现 RSS 下载、解析、转换、去重、事务入库和数据源状态更新。
-- 已编写 RSSHub 微博转换测试及 PostgreSQL 集成测试。
-- 当前机器缺少 Docker、PostgreSQL、Java 和 Maven，Java 测试及真实数据库写入尚未执行。
+- RSSHub 微博转换测试及 PostgreSQL 17 集成测试已执行通过。
+- 根 `compose.yaml` 已统一 RSSHub、数据库、Java API、定时 Worker 与 Nginx。
 - 微博 Cookie 仅保存在本机忽略文件中，不应提交到 Git。
 
 因此目前的准确状态是：
@@ -28,7 +28,7 @@ RSSHub route             已真实验证
 标准化 Post             已实现，已有测试用例
   |
   v
-PostgreSQL 事务写入      已实现，尚未在本机真实运行
+PostgreSQL 事务写入      已通过真实 PostgreSQL 17 容器测试
 ```
 
 ## 2. 数据链路
@@ -79,12 +79,11 @@ PostgreSQL 事务写入      已实现，尚未在本机真实运行
 {"_id":"source_new_weibo","idolId":"idol_new","rsshubRoute":"/weibo/user/<微博UID>","channel":"微博","enabled":true,"lastFetchStatus":"never"}
 ```
 
-然后重新执行 seed 和 Worker：
+然后重新执行幂等 seed，并立即运行一次 Worker：
 
 ```powershell
-Set-Location backend
-docker compose --profile tools run --rm seed
-docker compose --profile jobs run --rm fetch-feeds
+docker compose run --rm seed
+docker compose run --rm -e IDOLRADAR_WORKER_SCHEDULE_ENABLED=false worker
 ```
 
 注意事项：
@@ -126,31 +125,8 @@ Worker 每次启动后，以下操作无需人工介入：
 
 ### 4.2 尚未自动化部分
 
-Worker 是一次性任务，不是常驻定时器。API 服务也不会自行定时抓取。
-
-当前需要外部调度器周期执行：
-
-```powershell
-Set-Location backend
-docker compose --profile jobs run --rm fetch-feeds
-```
-
-生产环境建议每 30 分钟通过以下任一方式运行：
-
-- Linux cron
-- Kubernetes CronJob
-- 云平台定时任务
-- CI/CD 定时工作流
-
-示例 cron：
-
-```cron
-*/30 * * * * cd /srv/idolradar/backend && docker compose --profile jobs run --rm fetch-feeds
-```
-
-因此当前自动化程度属于：
-
-> 单次处理全自动，周期触发依赖外部调度。
+`worker` 容器常驻，Spring 默认每 30 分钟固定延迟运行。间隔由 `WORKER_INTERVAL` 配置；
+异常不会终止后续轮次。PostgreSQL advisory lock 继续防止多实例重入。
 
 ## 5. 链路完整性评估
 
@@ -174,8 +150,7 @@ docker compose --profile jobs run --rm fetch-feeds
 
 ### 5.2 主要缺口
 
-- 尚未真实运行 RSSHub、Worker、PostgreSQL 全链路验收。
-- 周期调度只有文档约定，未作为部署资源自动创建。
+- 尚未在目标服务器用真实 Cookie 完成 RSSHub、Worker、微信通知全链路验收。
 - Cookie 失效没有自动检测、轮换或告警。
 - 已存在 Post 使用冲突忽略，微博编辑后不会更新数据库内容。
 - 微博删除后，数据库历史 Post 不会自动删除或标记。
@@ -200,9 +175,9 @@ docker compose --profile jobs run --rm fetch-feeds
 真实微博适合作为人工冒烟测试，不适合作为每次 CI 的强依赖；CI 应使用固定 Feed fixture，
 避免微博限流、Cookie 失效或上游内容变化造成随机失败。
 
-### P0：生产调度与告警
+### P0：生产调度告警
 
-- 将 cron、Kubernetes CronJob 或云定时任务纳入正式部署配置。
+- 监控 Worker 容器存活、最近成功时间及连续失败次数。
 - 对 Worker 非零退出、全部 source 失败、连续失败和长时间无成功抓取告警。
 - 监控最后成功时间、抓取耗时、Feed 条目数和新增 Post 数。
 - 调度周期加入少量随机抖动，降低多个实例同时访问上游的风险。
@@ -279,5 +254,5 @@ sources.enabled = TRUE AND idols.enabled = TRUE
 - 本地通知关闭时不要求微信密钥。
 - Cookie 失效、Feed 超时和非法 XML 能产生明确错误状态。
 - 周期调度已部署，并有连续失败告警。
-- 生产 RSSHub 使用 HTTPS，Cookie 由安全的密钥系统管理。
-
+- Docker 私网 RSSHub 可使用内部 HTTP；跨主机访问时必须使用 HTTPS。Cookie 由安全的
+  密钥系统管理。

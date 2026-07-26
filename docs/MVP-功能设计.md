@@ -79,7 +79,7 @@ MVP 目标：以最小功能集合跑通完整闭环——用户关注一位 ido
 | 服务 | 触发方式 | 职责 |
 |---|---|---|
 | Spring Boot API | 小程序 HTTPS 调用 | 微信 code 登录、会话鉴权、关注/更换 idol、记录订阅额度、动态分页；Redis 跨实例限流 |
-| `fetch-feeds` Worker | 宿主 cron/Kubernetes CronJob，每 30 分钟 | 遍历 RSS 源、SSRF 安全拉取、解析去重、写入 `posts`、调用进程内通知服务 |
+| Worker 容器 | Spring 固定延迟调度，默认每 30 分钟 | 遍历 RSS 源、SSRF 安全拉取、解析去重、写入 `posts`、调用进程内通知服务 |
 | 通知服务 | Worker 进程内调用 | Redis 缓存并单飞刷新微信 access token；持久化 outbox；原子预扣额度；失败补偿；记录幂等投递 |
 
 ### 6.2 数据模型（PostgreSQL）

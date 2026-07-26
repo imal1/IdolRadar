@@ -3,12 +3,12 @@
 ## 项目结构（前后端分离）
 
 - `miniprogram/`：微信小程序，**开发者工具直接导入此目录**（`project.config.json` 在内，`miniprogramRoot` 为 `./`）。
-- `compose.yaml`、`.env.example`：全量 Docker 部署的根入口；RSSHub 已接入，后端、PostgreSQL、Redis 服务在迁移期间保留清晰占位。
-- `backend/`：Spring Boot 后端及其 Dockerfile；目录内原有 Compose 暂保留给后端单独开发，统一部署配置新增到项目根目录。
+- `backend/`：Spring Boot 后端源码与镜像 `Dockerfile`。
+- `compose.yaml`、`.env.example`、`deploy/`：服务器统一 Docker 编排与 Nginx 配置。所有 `docker compose` 命令都在项目根目录执行。
 - `rsshub/`：指向 `imal1/RSSHub` 的源码子模块，用于开发、调试、测试和构建自定义 route；官方 `DIYgod/RSSHub` 作为其上游同步来源。
 - `packages/test-utils/`：跨测试项目共享的纯 Node.js fixture/path 工具，不包含浏览器或小程序驱动。
 - `tests/miniprogram-e2e/`：Vitest 测试编排 + 官方 `miniprogram-automator` 驱动；小程序 UI 调试不得改用 Playwright。
-- `database/`：示例 seed；根 Compose 接入后端服务时应从 `./database` 挂载，旧 `backend/compose.yaml` 仍用 `../database`。
+- `database/`：发布 seed；根 `compose.yaml` 用 `./database` 只读挂载。
 - `scripts/validate-release.js`：发布配置校验，是「必需文件清单」的权威来源；改动配置路径后同步这里。
 
 ## 设计稿（Figma）
