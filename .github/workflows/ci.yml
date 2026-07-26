@@ -41,7 +41,6 @@ jobs:
           pnpm install --frozen-lockfile --ignore-scripts
           pnpm test
           pnpm run validate
-          docker compose --env-file .env.example config --quiet
 
       - name: Production image build
         run: docker build --tag idolradar-ci backend

@@ -116,9 +116,9 @@ services:
     image: ${RSSHUB_IMAGE:-idolradar-rsshub:local}
     restart: unless-stopped
     environment:
-      NODE_ENV: production
+      NODE_ENV: ${NODE_ENV:-production}
       PORT: "1200"
-      CACHE_TYPE: redis
+      CACHE_TYPE: ${CACHE_TYPE:-redis}
       REDIS_URL: "${RSSHUB_REDIS_URL:-redis://rsshub-cache:6379/}"
       CACHE_EXPIRE: "${RSSHUB_CACHE_EXPIRE:-300}"
       REQUEST_RETRY: "${RSSHUB_REQUEST_RETRY:-2}"
@@ -207,26 +207,6 @@ services:
         condition: service_healthy
       seed:
         condition: service_completed_successfully
-
-  nginx:
-    image: nginx:1.29-alpine
-    restart: unless-stopped
-    environment:
-      SERVER_NAME: ${SERVER_NAME:?required}
-      # 只替换域名，保留 Nginx 自身的 $host、$request_uri 等变量。
-      NGINX_ENVSUBST_FILTER: ^SERVER_NAME$
-    volumes:
-      - ./deploy/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
-      - ${TLS_CERT_FILE:?required}:/etc/nginx/certs/fullchain.pem:ro
-      - ${TLS_KEY_FILE:?required}:/etc/nginx/certs/private.key:ro
-    ports:
-      - "${HTTP_PORT:-80}:80"
-      - "${HTTPS_PORT:-443}:443"
-    depends_on:
-      app:
-        condition: service_healthy
-    security_opt:
-      - no-new-privileges:true
 
 volumes:
   postgres-java-data:

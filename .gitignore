@@ -4,7 +4,6 @@
 *.iml
 .env
 .env.*
-!.env.example
 .codex/
 .agents/
 .serena/

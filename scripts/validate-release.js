@@ -88,7 +88,7 @@ function walkJson(directory) {
 
 function loadDotenv() {
   const values = {};
-  for (const name of ['.env', '.env.local']) {
+  for (const name of ['.env']) {
     const filePath = path.join(root, name);
     if (!fs.existsSync(filePath)) continue;
     for (const line of fs.readFileSync(filePath, 'utf8').split(/\r?\n/)) {
@@ -153,9 +153,8 @@ const requiredFiles = [
   'package.json',
   'pnpm-lock.yaml',
   'pnpm-workspace.yaml',
-  '.env.example',
+  '.github/workflows/release.yml',
   'compose.yaml',
-  'deploy/nginx/default.conf.template',
   'backend/Dockerfile',
   'backend/maven-settings.docker.xml',
   '.gitmodules',
@@ -366,32 +365,6 @@ if (!isPlaceholder(dotenv.SUBSCRIBE_TEMPLATE_ID)
   addError('客户端 subscribeTemplateId 与服务端 SUBSCRIBE_TEMPLATE_ID 不一致');
 }
 
-const exampleEnv = fs.existsSync(path.join(root, '.env.example'))
-  ? fs.readFileSync(path.join(root, '.env.example'), 'utf8')
-  : '';
-const exampleHasDatabaseUrl = /^SPRING_DATASOURCE_URL=/m.test(exampleEnv);
-const exampleHasSplitDatabase = [
-  ['POSTGRES_DB'],
-  ['POSTGRES_USER'],
-  ['POSTGRES_PASSWORD']
-].every((names) => names.some((name) => new RegExp(`^${name}=`, 'm').test(exampleEnv)));
-if (!exampleHasDatabaseUrl && !exampleHasSplitDatabase) {
-  addError('.env.example: 须包含 SPRING_DATASOURCE_URL 或完整 POSTGRES_* 数据库变量');
-}
-for (const name of [
-  'WECHAT_APP_ID',
-  'WECHAT_APP_SECRET',
-  'SUBSCRIBE_TEMPLATE_ID',
-  'RSSHUB_BASE_URL',
-  'RSS_TRUSTED_ORIGINS',
-  'SERVER_NAME',
-  'TLS_CERT_FILE',
-  'TLS_KEY_FILE',
-  'WORKER_INTERVAL'
-]) {
-  if (!new RegExp(`^${name}=`, 'm').test(exampleEnv)) addError(`.env.example: 缺少 ${name}`);
-}
-
 const appSource = fs.existsSync(path.join(root, 'miniprogram/app.js'))
   ? fs.readFileSync(path.join(root, 'miniprogram/app.js'), 'utf8')
   : '';
@@ -429,8 +402,7 @@ if (fs.existsSync(composePath)) {
     'migrate:',
     'seed:',
     'app:',
-    'worker:',
-    'nginx:'
+    'worker:'
   ]) {
     if (!compose.includes(service)) addError(`compose.yaml: 缺少 ${service.slice(0, -1)} 服务`);
   }

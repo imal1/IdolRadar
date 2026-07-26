@@ -17,7 +17,7 @@
 - 数据：PostgreSQL 17、Redis 7
 - 任务：同一 Java 制品的常驻 Worker 模式 + Spring 定时调度 + PostgreSQL advisory lock
 - 数据库版本：专用 `migrate` 模式执行 Flyway SQL；API/Worker 无 DDL 权限
-- 部署：根目录单一 Docker Compose；Nginx HTTPS 反向代理
+- 部署：根目录单一 Docker Compose；生产 HTTPS 由服务器宿主机 Nginx 反向代理
 
 生产后端、Worker、镜像均不依赖 Node.js。仓库的 Node.js 仅用于可选的小程序 JavaScript 契约和发布配置检查。
 
@@ -28,8 +28,7 @@ miniprogram/             微信小程序（开发者工具项目根，含 projec
 backend/src/main/java/   Spring Boot API、认证、RSS Worker、推送、seed
 backend/src/main/resources/db/migration/  PostgreSQL migration
 backend/Dockerfile       Java 后端镜像
-compose.yaml             PostgreSQL、Redis、API、Worker、RSSHub、Nginx 统一编排
-deploy/nginx/            Nginx HTTPS 配置模板
+compose.yaml             PostgreSQL、Redis、API、Worker、RSSHub 统一编排
 rsshub/                  指向 imal1/RSSHub 的源码子模块，用于 route 开发和镜像构建
 packages/test-utils/      RSSHub/小程序测试可复用的纯 Node.js 工具
 database/                王一博与 RSSHub 微博 route seed
@@ -43,15 +42,18 @@ docs/                    PRD、功能设计、测试与部署手册
 要求：Docker。所有 Compose 命令都在项目根目录执行：
 
 ```bash
-cp .env.example .env
-# 编辑 .env：密码、微信配置、域名、Nginx 证书绝对路径
+# 编辑 .env：密码与微信配置
 docker compose up -d --build
 docker compose ps
 curl http://127.0.0.1:8080/readyz
 ```
 
 首次完整启动自动执行 Flyway migration 和幂等 seed，并启动 PostgreSQL、业务 Redis、RSSHub
-缓存、RSSHub、Java API、定时 Worker、Nginx。小程序及 `tests/miniprogram-e2e/` 不进入镜像。
+缓存、RSSHub、Java API、定时 Worker。小程序及 `tests/miniprogram-e2e/` 不进入镜像。
+
+生产发布由 GitHub Release 触发：Actions 构建后端与 RSSHub 私有 GHCR 镜像，并在启用服务器
+部署后通过 SSH 更新 Compose 服务。生产 `.env` 仅保存在 GitHub `production` Environment
+Secret 和服务器上，配置方法见 `docs/DEPLOYMENT.md`。
 
 微信开发者工具请**导入 `miniprogram/` 目录**作为项目（`project.config.json`/`project.private.config.json` 已随小程序代码放在其中，`miniprogramRoot` 为 `./`）。配置在 [miniprogram/config/env.js](miniprogram/config/env.js)（无密钥，已随仓库提交）：按需修改 `apiBaseUrl` 为可访问的 API 地址，上线前填写订阅消息模板 ID。
 

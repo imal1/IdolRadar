@@ -1,0 +1,196 @@
+name: release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: production-release
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  publish:
+    name: Build and publish private images
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      backend_image: ${{ steps.images.outputs.backend }}
+      rsshub_image: ${{ steps.images.outputs.rsshub }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Resolve image names
+        id: images
+        shell: bash
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          echo "backend=${REGISTRY}/${owner}/idolradar-backend" >> "$GITHUB_OUTPUT"
+          echo "rsshub=${REGISTRY}/${owner}/idolradar-rsshub" >> "$GITHUB_OUTPUT"
+
+      - name: Sign in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Backend image metadata
+        id: backend-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.images.outputs.backend }}
+          tags: |
+            type=raw,value=${{ github.event.release.tag_name }}
+            type=raw,value=latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Build and publish backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: ${{ steps.backend-meta.outputs.tags }}
+          labels: ${{ steps.backend-meta.outputs.labels }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      - name: RSSHub image metadata
+        id: rsshub-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.images.outputs.rsshub }}
+          tags: |
+            type=raw,value=${{ github.event.release.tag_name }}
+            type=raw,value=latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Build and publish RSSHub image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./rsshub
+          file: ./rsshub/Dockerfile
+          push: true
+          tags: ${{ steps.rsshub-meta.outputs.tags }}
+          labels: ${{ steps.rsshub-meta.outputs.labels }}
+          build-args: |
+            PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=0
+          cache-from: type=gha,scope=rsshub
+          cache-to: type=gha,mode=max,scope=rsshub
+
+  deploy:
+    name: Deploy release to server
+    needs: publish
+    if: vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare release bundle and environment
+        shell: bash
+        env:
+          PRODUCTION_ENV_FILE: ${{ secrets.PRODUCTION_ENV_FILE }}
+          BACKEND_IMAGE: ${{ needs.publish.outputs.backend_image }}:${{ github.event.release.tag_name }}
+          RSSHUB_IMAGE: ${{ needs.publish.outputs.rsshub_image }}:${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          test -n "$PRODUCTION_ENV_FILE"
+          bundle_dir="$RUNNER_TEMP/idolradar-release"
+          install -d -m 700 "$bundle_dir"
+          cp compose.yaml "$bundle_dir/compose.yaml"
+          cp -R database "$bundle_dir/"
+          install -m 600 /dev/null "$bundle_dir/.env"
+          printf '%s\n' "$PRODUCTION_ENV_FILE" > "$bundle_dir/.env"
+          sed -i '/^IDOLRADAR_IMAGE=/d; /^RSSHUB_IMAGE=/d' "$bundle_dir/.env"
+          {
+            printf '\n'
+            printf 'IDOLRADAR_IMAGE=%s\n' "$BACKEND_IMAGE"
+            printf 'RSSHUB_IMAGE=%s\n' "$RSSHUB_IMAGE"
+          } >> "$bundle_dir/.env"
+
+      - name: Configure SSH
+        shell: bash
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_SSH_KEY"
+          test -n "$DEPLOY_KNOWN_HOSTS"
+          install -d -m 700 "$HOME/.ssh"
+          install -m 600 /dev/null "$HOME/.ssh/idolradar_deploy"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/idolradar_deploy"
+          install -m 600 /dev/null "$HOME/.ssh/known_hosts"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+
+      - name: Transfer release bundle
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          deploy_port="${DEPLOY_PORT:-22}"
+          deploy_path="${DEPLOY_PATH:-/opt/idolradar}"
+          [[ "$deploy_port" =~ ^[0-9]+$ ]]
+          [[ "$deploy_path" =~ ^/[A-Za-z0-9._/-]+$ ]]
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_USER"
+          ssh_args=(-i "$HOME/.ssh/idolradar_deploy" -p "$deploy_port" -o KexAlgorithms=curve25519-sha256 "$DEPLOY_USER@$DEPLOY_HOST")
+          tar -C "$RUNNER_TEMP/idolradar-release" -czf - . |
+            ssh "${ssh_args[@]}" "install -d -m 700 '$deploy_path' && tar -xzf - -C '$deploy_path'"
+
+      - name: Pull private images and deploy
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          deploy_port="${DEPLOY_PORT:-22}"
+          deploy_path="${DEPLOY_PATH:-/opt/idolradar}"
+          ssh_args=(-i "$HOME/.ssh/idolradar_deploy" -p "$deploy_port" -o KexAlgorithms=curve25519-sha256 "$DEPLOY_USER@$DEPLOY_HOST")
+          printf '%s' "$GHCR_TOKEN" |
+            ssh "${ssh_args[@]}" "docker login ghcr.io --username '$GHCR_USER' --password-stdin"
+          ssh "${ssh_args[@]}" "
+            set -eu
+            trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+            cd '$deploy_path'
+            docker compose pull
+            docker compose up -d --no-build --remove-orphans
+            docker compose ps
+          "
+
+      - name: Remove runner secrets
+        if: always()
+        shell: bash
+        run: |
+          rm -rf "$RUNNER_TEMP/idolradar-release"
+          rm -f "$HOME/.ssh/idolradar_deploy"
