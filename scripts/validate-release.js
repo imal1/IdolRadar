@@ -463,8 +463,9 @@ const gitmodulesPath = path.join(root, '.gitmodules');
 if (fs.existsSync(gitmodulesPath)) {
   const gitmodules = fs.readFileSync(gitmodulesPath, 'utf8');
   if (!/path\s*=\s*rsshub\b/.test(gitmodules)
-    || !/url\s*=\s*https:\/\/github\.com\/imal1\/RSSHub\.git\b/i.test(gitmodules)) {
-    addError('.gitmodules: rsshub 必须指向 imal1/RSSHub 下游仓库');
+    || !/url\s*=\s*https:\/\/github\.com\/imal1\/RSSHub\.git\b/i.test(gitmodules)
+    || !/branch\s*=\s*master\b/i.test(gitmodules)) {
+    addError('.gitmodules: rsshub 必须指向 imal1/RSSHub 下游仓库，且 branch 必须为 master');
   }
 }
 
