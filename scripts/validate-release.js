@@ -462,10 +462,22 @@ if (fs.existsSync(productionComposePath)) {
 const gitmodulesPath = path.join(root, '.gitmodules');
 if (fs.existsSync(gitmodulesPath)) {
   const gitmodules = fs.readFileSync(gitmodulesPath, 'utf8');
-  const rsshubSubmodule = (gitmodules.match(/\[submodule\s+"rsshub"\]\s*([\s\S]*?)(?=\n\[submodule\s+|$)/i) || [])[1] || '';
-  if (!/path\s*=\s*rsshub\b/.test(rsshubSubmodule)
-    || !/url\s*=\s*https:\/\/github\.com\/imal1\/RSSHub\.git\b/i.test(rsshubSubmodule)
-    || !/branch\s*=\s*master\b/i.test(rsshubSubmodule)) {
+  const rsshubSubmodule = gitmodules.split(/\r?\n/).reduce((state, line) => {
+    const sectionMatch = line.match(/^\[submodule\s+"([^"]+)"\]$/i);
+    if (sectionMatch) {
+      state.current = sectionMatch[1];
+      return state;
+    }
+
+    const configMatch = line.match(/^\s*([a-z0-9.-]+)\s*=\s*(.*?)\s*$/i);
+    if (state.current === 'rsshub' && configMatch) {
+      state.values[configMatch[1].toLowerCase()] = configMatch[2];
+    }
+    return state;
+  }, { current: '', values: {} }).values;
+  if (rsshubSubmodule.path !== 'rsshub'
+    || !/^https:\/\/github\.com\/imal1\/RSSHub\.git$/i.test(rsshubSubmodule.url || '')
+    || !/^master$/i.test(rsshubSubmodule.branch || '')) {
     addError('.gitmodules: rsshub 必须指向 imal1/RSSHub 源码子模块，且 branch 必须为 master');
   }
 }
