@@ -51,9 +51,10 @@ curl http://127.0.0.1:8080/readyz
 首次完整启动自动执行 Flyway migration 和幂等 seed，并启动 PostgreSQL、业务 Redis、RSSHub
 缓存、RSSHub、Java API、定时 Worker。小程序及 `tests/miniprogram-e2e/` 不进入镜像。
 
-生产发布由 GitHub Release 触发：Actions 构建后端与 RSSHub 私有 GHCR 镜像，并在启用服务器
-部署后通过 SSH 更新 Compose 服务。生产 `.env` 仅保存在 GitHub `production` Environment
-Secret 和服务器上，配置方法见 `docs/DEPLOYMENT.md`。
+生产发布可由 GitHub Release 自动触发，也可在 Actions 页面手动运行：Actions 构建后端与
+RSSHub 私有 GHCR 镜像，并在启用服务器部署后通过 SSH 更新 Compose 服务。生产 `.env`
+仅保存在 GitHub `production` Environment Secret 和服务器上，配置方法见
+`docs/DEPLOYMENT.md`。
 
 微信开发者工具请**导入 `miniprogram/` 目录**作为项目（`project.config.json`/`project.private.config.json` 已随小程序代码放在其中，`miniprogramRoot` 为 `./`）。配置在 [miniprogram/config/env.js](miniprogram/config/env.js)（无密钥，已随仓库提交）：按需修改 `apiBaseUrl` 为可访问的 API 地址，上线前填写订阅消息模板 ID。
 

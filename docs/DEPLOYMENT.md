@@ -58,7 +58,7 @@ WEIBO_COOKIES=已授权Cookie
 宿主机 Nginx 保持监听 `80/443`，将 `app.imali.top` 反向代理到
 `http://127.0.0.1:8080`。证书与 Nginx 配置不由本项目 Compose 修改。
 
-## 4. Release 自动部署
+## 4. GitHub Actions 发布部署
 
 服务器部署需要在 GitHub `production` Environment 中配置：
 
@@ -85,11 +85,15 @@ gh variable set DEPLOY_ENABLED --body true
 gh release create v0.1.0 --generate-notes
 ```
 
-Release 工作流先在 GitHub Actions 构建两个镜像并推送到私有 GHCR，再把
+也可以进入仓库的 `Actions` → `release` → `Run workflow`，选择要部署的分支后手动运行。
+`image_tag` 可选；留空时使用 `manual-<commit SHA>`，填写时必须是合法的 Docker 标签。
+
+无论由 Release 自动触发还是手动运行，工作流都会先在 GitHub Actions 构建两个镜像并推送
+到私有 GHCR，再把
 `compose.yaml`、`database/` 和临时生成的 `.env` 传到服务器。服务器只拉取
 已构建镜像并执行 `docker compose up -d --no-build`，不需要 Maven、Node.js 或小程序工具链。
 
-## 5. 手工部署
+## 5. 服务器直接部署
 
 校验、构建、启动：
 
