@@ -462,6 +462,7 @@ if (fs.existsSync(productionComposePath)) {
 const gitmodulesPath = path.join(root, '.gitmodules');
 if (fs.existsSync(gitmodulesPath)) {
   const gitmodules = fs.readFileSync(gitmodulesPath, 'utf8');
+  // 解析 .gitmodules 的 INI 段落，只提取 rsshub 子模块配置，避免误用其他子模块的 path/url/branch 通过发布校验。
   const rsshubSubmodule = gitmodules.split(/\r?\n/).reduce((state, line) => {
     const sectionMatch = line.match(/^\[submodule\s+"([^"]+)"\]$/i);
     if (sectionMatch) {
@@ -469,7 +470,7 @@ if (fs.existsSync(gitmodulesPath)) {
       return state;
     }
 
-    const configMatch = line.match(/^\s*([a-z0-9.-]+)\s*=\s*(.*?)\s*$/i);
+    const configMatch = line.match(/^\s*([a-zA-Z0-9.-]+)\s*=\s*(.*?)\s*$/);
     if (state.current === 'rsshub' && configMatch) {
       state.values[configMatch[1].toLowerCase()] = configMatch[2];
     }
@@ -477,7 +478,7 @@ if (fs.existsSync(gitmodulesPath)) {
   }, { current: '', values: {} }).values;
   if (rsshubSubmodule.path !== 'rsshub'
     || !/^https:\/\/github\.com\/imal1\/RSSHub\.git$/i.test(rsshubSubmodule.url || '')
-    || !/^master$/i.test(rsshubSubmodule.branch || '')) {
+    || rsshubSubmodule.branch !== 'master') {
     addError('.gitmodules: rsshub 必须指向 imal1/RSSHub 源码子模块，且 branch 必须为 master');
   }
 }
