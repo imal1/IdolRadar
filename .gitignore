@@ -14,6 +14,7 @@
 skills-lock.json
 coverage/
 graphify-out/
+docs/IdolRadar-Docker统一部署流程.md
 node_modules/
 **/node_modules/
 .pnpm-store/
