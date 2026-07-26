@@ -1,8 +1,9 @@
 name: release
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       image_tag:
@@ -41,16 +42,23 @@ jobs:
         id: images
         shell: bash
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          PUSH_TAG: ${{ github.ref_name }}
           MANUAL_TAG: ${{ inputs.image_tag }}
         run: |
           set -euo pipefail
           owner="${GITHUB_REPOSITORY_OWNER,,}"
-          if [[ "$GITHUB_EVENT_NAME" == "release" ]]; then
-            image_tag="$RELEASE_TAG"
-          else
-            image_tag="${MANUAL_TAG:-manual-${GITHUB_SHA:0:12}}"
-          fi
+          case "$GITHUB_EVENT_NAME" in
+            push)
+              image_tag="$PUSH_TAG"
+              ;;
+            workflow_dispatch)
+              image_tag="${MANUAL_TAG:-manual-${GITHUB_SHA:0:12}}"
+              ;;
+            *)
+              echo "::error::Unsupported event: $GITHUB_EVENT_NAME"
+              exit 1
+              ;;
+          esac
           if [[ ! "$image_tag" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
             echo "::error::Invalid Docker image tag: $image_tag"
             exit 1
