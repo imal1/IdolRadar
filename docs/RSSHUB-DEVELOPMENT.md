@@ -48,7 +48,7 @@ pnpm run rsshub:dev
 Invoke-WebRequest http://127.0.0.1:1200/weibo/user/5492443184
 ```
 
-统一 Docker 链路复制根 `.env.example` 为 `.env`，填写 `WEIBO_COOKIES`。保持
+统一 Docker 链路直接使用根目录 `.env`，填写 `WEIBO_COOKIES`。保持
 `NOTIFICATIONS_ENABLED=false` 可在没有微信密钥时单独验收 RSS 入库：
 
 ```powershell

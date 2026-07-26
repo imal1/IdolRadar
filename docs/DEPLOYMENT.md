@@ -1,28 +1,45 @@
 # IdolRadar Docker 部署手册
 
 目标：一台服务器、一份根目录 `compose.yaml`，一次启动 PostgreSQL、Redis、Flyway、
-seed、Java API、定时 Worker、RSSHub、RSSHub 缓存、Nginx。微信小程序及其自动化测试不进
+seed、Java API、定时 Worker、RSSHub、RSSHub 缓存。微信小程序及其自动化测试不进
 Docker。
 
 ## 1. 服务器准备
 
 - Debian 服务器，Docker Engine、Docker Compose
-- 已解析到服务器的备案域名
-- Nginx 格式 TLS 证书与私钥
+- 已解析到服务器的备案域名，以及已配置的宿主机 Nginx 与 TLS 证书
 - 真实微信小程序 AppID、AppSecret、订阅消息模板 ID
 - 已获授权的 idol 资料、头像和数据源
 - 安全组仅放行 `22`、`80`、`443`
 
-数据库密码、Redis 密码、AppSecret、Cookie、证书私钥禁止提交 Git。PostgreSQL、Redis、
+数据库密码、Redis 密码、AppSecret、Cookie 禁止提交 Git。PostgreSQL、Redis、
 Java 调试端口都只绑定 `127.0.0.1`。
 
-## 2. 放置与配置
+## 2. GitHub Actions 生产环境
+
+生产 `.env` 不提交仓库。它作为一个完整的多行 Secret 保存到 GitHub `production`
+Environment，只有 Release 的部署 Job 进入该环境后才能读取。首次配置可在项目根目录执行：
+
+```powershell
+gh api --method PUT repos/imal1/IdolRadar/environments/production
+Get-Content -Raw .env | gh secret set PRODUCTION_ENV_FILE --env production
+gh variable set DEPLOY_ENABLED --body false
+```
+
+`DEPLOY_ENABLED=false` 时，发布只构建并推送以下私有 GHCR 镜像，不连接服务器：
+
+- `ghcr.io/imal1/idolradar-backend:<release-tag>`
+- `ghcr.io/imal1/idolradar-rsshub:<release-tag>`
+
+镜像同时更新 `latest` 标签。构建上下文只有 `backend/` 和 `rsshub/`，微信小程序不会进入
+镜像或部署包。
+
+## 3. 放置与配置
 
 项目放到 `/opt/idolradar`。所有 Compose 命令都在该目录执行：
 
 ```bash
 cd /opt/idolradar
-cp .env.example .env
 chmod 600 .env
 ```
 
@@ -31,9 +48,6 @@ chmod 600 .env
 ```dotenv
 POSTGRES_PASSWORD=数据库强密码
 REDIS_PASSWORD=Redis强密码
-SERVER_NAME=你的域名
-TLS_CERT_FILE=/opt/idolradar/certs/证书文件.crt
-TLS_KEY_FILE=/opt/idolradar/certs/私钥文件.key
 WECHAT_APP_ID=真实小程序AppID
 WECHAT_APP_SECRET=真实AppSecret
 SUBSCRIBE_TEMPLATE_ID=已审核模板ID
@@ -41,16 +55,41 @@ NOTIFICATIONS_ENABLED=true
 WEIBO_COOKIES=已授权Cookie
 ```
 
-`TLS_CERT_FILE`、`TLS_KEY_FILE` 必须是服务器绝对路径。Nginx 证书压缩包解压后，选
-`.crt`/`.pem` 证书链和 `.key` 私钥；私钥建议 `chmod 600`。
+宿主机 Nginx 保持监听 `80/443`，将 `app.imali.top` 反向代理到
+`http://127.0.0.1:8080`。证书与 Nginx 配置不由本项目 Compose 修改。
 
-## 3. 一次部署
+## 4. Release 自动部署
 
-若服务器已有宿主机 Nginx 占用 `80/443`，先停止并禁用，避免端口冲突：
+服务器部署需要在 GitHub `production` Environment 中配置：
 
-```bash
-systemctl disable --now nginx
+| 类型 | 名称 | 内容 |
+|---|---|---|
+| Secret | `PRODUCTION_ENV_FILE` | 完整的生产 `.env` |
+| Secret | `DEPLOY_HOST` | 服务器域名或 IP |
+| Secret | `DEPLOY_USER` | SSH 用户 |
+| Secret | `DEPLOY_SSH_KEY` | SSH 私钥全文 |
+| Secret | `DEPLOY_KNOWN_HOSTS` | `ssh-keyscan` 得到的服务器主机公钥记录 |
+| Variable | `DEPLOY_PORT` | SSH 端口，默认 `22` |
+| Variable | `DEPLOY_PATH` | 部署目录，默认 `/opt/idolradar` |
+
+服务器需要安装 Docker Engine 与 Docker Compose，SSH 用户需要能执行 Docker。配置完成后
+启用部署：
+
+```powershell
+gh variable set DEPLOY_ENABLED --body true
 ```
+
+在 GitHub 发布 Release，或使用 CLI：
+
+```powershell
+gh release create v0.1.0 --generate-notes
+```
+
+Release 工作流先在 GitHub Actions 构建两个镜像并推送到私有 GHCR，再把
+`compose.yaml`、`database/` 和临时生成的 `.env` 传到服务器。服务器只拉取
+已构建镜像并执行 `docker compose up -d --no-build`，不需要 Maven、Node.js 或小程序工具链。
+
+## 5. 手工部署
 
 校验、构建、启动：
 
@@ -59,7 +98,7 @@ cd /opt/idolradar
 docker compose config --quiet
 docker compose up -d --build
 docker compose ps
-docker compose logs --tail=100 migrate seed app worker rsshub nginx
+docker compose logs --tail=100 migrate seed app worker rsshub
 ```
 
 启动顺序由 Compose 保证：
@@ -68,7 +107,7 @@ docker compose logs --tail=100 migrate seed app worker rsshub nginx
 2. Flyway `migrate` 成功。
 3. 幂等 `seed` 成功。
 4. API、RSSHub 健康。
-5. Worker 与 Nginx 启动。
+5. Worker 启动。
 
 `migrate`、`seed` 正常状态是 `Exited (0)`；其余服务应为 `Up`/`healthy`。
 
@@ -83,7 +122,7 @@ curl https://你的域名/readyz
 微信公众平台必须把 `https://你的域名` 加入 `request` 合法域名；小程序
 `miniprogram/config/env.js` 的 `apiBaseUrl` 使用相同 HTTPS origin。
 
-## 4. 数据与定时 Worker
+## 6. 数据与定时 Worker
 
 Flyway SQL 位于 `backend/src/main/resources/db/migration/`。已执行 migration 永不修改；
 结构变化新增版本。API、Worker、seed 均禁止自动 DDL。
@@ -116,7 +155,7 @@ docker compose run --rm \
   worker
 ```
 
-## 5. 升级与回滚
+## 7. 升级与回滚
 
 更新代码后：
 
@@ -124,7 +163,7 @@ docker compose run --rm \
 cd /opt/idolradar
 docker compose up -d --build
 docker compose ps
-docker compose logs --tail=100 migrate seed app worker nginx
+docker compose logs --tail=100 migrate seed app worker rsshub
 ```
 
 Compose 会复用 PostgreSQL、Redis 命名卷。禁止执行 `docker compose down -v`，否则会删除
@@ -138,12 +177,12 @@ docker compose exec -T postgres \
   pg_dump -U idolradar -d idolradar -Fc > /opt/idolradar-backup.dump
 ```
 
-## 6. 运维命令
+## 8. 运维命令
 
 ```bash
 docker compose ps
-docker compose logs -f app worker rsshub nginx
-docker compose restart app worker rsshub nginx
+docker compose logs -f app worker rsshub
+docker compose restart app worker rsshub
 docker compose exec postgres psql -U idolradar -d idolradar
 docker compose exec redis sh -c 'REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli ping'
 ```
@@ -151,14 +190,14 @@ docker compose exec redis sh -c 'REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli ping'
 Navicat 连接 PostgreSQL：先建 SSH 隧道到服务器，再连接 `127.0.0.1:5432`；用户名、
 数据库名、密码取服务器 `.env`。不要在安全组放行 `5432/6379/8080/1200`。
 
-## 7. 上线验收
+## 9. 上线验收
 
 ```bash
 mvn -f backend/pom.xml test
 mvn -f backend/pom.xml -Pintegration-test -Didolradar.it.enabled=true verify
 pnpm test
 pnpm run validate:release
-docker compose --env-file .env.example config --quiet
+docker compose config --quiet
 ```
 
 - `/healthz`：JVM 存活。

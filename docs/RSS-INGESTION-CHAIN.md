@@ -10,7 +10,7 @@ Testcontainers 集成测试。服务器仍需用真实 Cookie 完成 RSSHub 到�
 - RSSHub `/weibo/user/5492443184` 实际抓取王一博微博成功，返回 HTTP 200 和 10 条动态。
 - 后端已经实现 RSS 下载、解析、转换、去重、事务入库和数据源状态更新。
 - RSSHub 微博转换测试及 PostgreSQL 17 集成测试已执行通过。
-- 根 `compose.yaml` 已统一 RSSHub、数据库、Java API、定时 Worker 与 Nginx。
+- 根 `compose.yaml` 已统一 RSSHub、数据库、Java API 与定时 Worker；HTTPS 由服务器宿主机 Nginx 提供。
 - 微博 Cookie 仅保存在本机忽略文件中，不应提交到 Git。
 
 因此目前的准确状态是：
