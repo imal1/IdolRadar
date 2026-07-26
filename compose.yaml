@@ -1,0 +1,49 @@
+name: idolradar
+
+# 全量 Docker 部署统一从项目根目录编排。
+# 后端、PostgreSQL 与共享 Redis 将由对应维护者补入本文件；服务名请分别保留为
+# app、postgres、redis，使 RSSHub 和后续 Worker 可以通过 Compose 内部 DNS 互联。
+services:
+  # app:
+  #   # TODO(backend): 接入 backend/Dockerfile、迁移任务、Worker 和健康检查。
+  #
+  # postgres:
+  #   # TODO(database): 配置持久化卷、健康检查和独立迁移账号。
+  #
+  # redis:
+  #   # TODO(redis): 提供名为 redis 的缓存服务并配置认证、持久化和内存策略。
+
+  rsshub:
+    # 从固定的 rsshub submodule 源码构建，确保自定义 route 与主仓库记录的 SHA 一致。
+    build:
+      context: ./rsshub
+      dockerfile: Dockerfile
+      args:
+        # 默认内置 Chromium，覆盖需要浏览器的 RSSHub route；资源受限时可改为 1。
+        PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "${RSSHUB_PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD:-0}"
+    image: "${RSSHUB_IMAGE:-idolradar-rsshub:local}"
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "1200"
+      CACHE_TYPE: redis
+      # 未来的统一 Redis 服务必须使用 redis 作为 Compose 服务名；若启用认证，
+      # 请通过 RSSHUB_REDIS_URL 注入完整且已正确 URL 编码的连接串。
+      REDIS_URL: "${RSSHUB_REDIS_URL:-redis://redis:6379/}"
+      CACHE_EXPIRE: "${RSSHUB_CACHE_EXPIRE:-300}"
+      REQUEST_RETRY: "${RSSHUB_REQUEST_RETRY:-2}"
+      REQUEST_TIMEOUT: "${RSSHUB_REQUEST_TIMEOUT:-30000}"
+    ports:
+      # 只监听宿主机回环地址，公网 HTTPS 应由后续反向代理服务统一暴露。
+      - "127.0.0.1:${RSSHUB_PORT:-1200}:1200"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:1200/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+# TODO(database/redis): 在对应服务接入时，于此声明 PostgreSQL 与 Redis 数据卷。
+# volumes:
+#   postgres-data:
+#   redis-data:
