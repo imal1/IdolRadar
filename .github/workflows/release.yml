@@ -1,8 +1,15 @@
 name: release
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Optional Docker image tag; defaults to manual-<commit SHA>
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -23,6 +30,7 @@ jobs:
     outputs:
       backend_image: ${{ steps.images.outputs.backend }}
       rsshub_image: ${{ steps.images.outputs.rsshub }}
+      image_tag: ${{ steps.images.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,10 +41,31 @@ jobs:
       - name: Resolve image names
         id: images
         shell: bash
+        env:
+          PUSH_TAG: ${{ github.ref_name }}
+          MANUAL_TAG: ${{ inputs.image_tag }}
         run: |
+          set -euo pipefail
           owner="${GITHUB_REPOSITORY_OWNER,,}"
+          case "$GITHUB_EVENT_NAME" in
+            push)
+              image_tag="$PUSH_TAG"
+              ;;
+            workflow_dispatch)
+              image_tag="${MANUAL_TAG:-manual-${GITHUB_SHA:0:12}}"
+              ;;
+            *)
+              echo "::error::Unsupported event: $GITHUB_EVENT_NAME"
+              exit 1
+              ;;
+          esac
+          if [[ ! "$image_tag" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+            echo "::error::Invalid Docker image tag: $image_tag"
+            exit 1
+          fi
           echo "backend=${REGISTRY}/${owner}/idolradar-backend" >> "$GITHUB_OUTPUT"
           echo "rsshub=${REGISTRY}/${owner}/idolradar-rsshub" >> "$GITHUB_OUTPUT"
+          echo "tag=$image_tag" >> "$GITHUB_OUTPUT"
 
       - name: Sign in to GHCR
         uses: docker/login-action@v3
@@ -51,7 +80,7 @@ jobs:
         with:
           images: ${{ steps.images.outputs.backend }}
           tags: |
-            type=raw,value=${{ github.event.release.tag_name }}
+            type=raw,value=${{ steps.images.outputs.tag }}
             type=raw,value=latest
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
@@ -74,7 +103,7 @@ jobs:
         with:
           images: ${{ steps.images.outputs.rsshub }}
           tags: |
-            type=raw,value=${{ github.event.release.tag_name }}
+            type=raw,value=${{ steps.images.outputs.tag }}
             type=raw,value=latest
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
@@ -94,7 +123,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=rsshub
 
   deploy:
-    name: Deploy release to server
+    name: Deploy images to server
     needs: publish
     if: vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
@@ -111,8 +140,8 @@ jobs:
         shell: bash
         env:
           PRODUCTION_ENV_FILE: ${{ secrets.PRODUCTION_ENV_FILE }}
-          BACKEND_IMAGE: ${{ needs.publish.outputs.backend_image }}:${{ github.event.release.tag_name }}
-          RSSHUB_IMAGE: ${{ needs.publish.outputs.rsshub_image }}:${{ github.event.release.tag_name }}
+          BACKEND_IMAGE: ${{ needs.publish.outputs.backend_image }}:${{ needs.publish.outputs.image_tag }}
+          RSSHUB_IMAGE: ${{ needs.publish.outputs.rsshub_image }}:${{ needs.publish.outputs.image_tag }}
         run: |
           set -euo pipefail
           test -n "$PRODUCTION_ENV_FILE"
