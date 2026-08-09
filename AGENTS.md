@@ -34,3 +34,17 @@
 - 注释重点说明业务目的，以及事务、幂等、并发、重试、安全、兼容性边界背后的原因。
 - migration 文件必须写版本目的、部署顺序、关键约束与索引用途。
 - 非平凡类、接口、复杂方法必须有职责或契约注释；禁止逐行复述代码、给显而易见语句写废话注释。
+
+## Agent skills
+
+### Issue tracker
+
+Issues 记录在 GitHub Issues（`imal1/IdolRadar`），通过 `gh` CLI 操作。见 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+沿用五个规范标签：`needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix`。见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+single-context：根目录 `CONTEXT.md` + `docs/adr/`。见 `docs/agents/domain.md`。
