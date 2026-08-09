@@ -35,7 +35,10 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
     @Override
     public List<WorkerModels.Source> loadEnabledSources() {
         return jdbc.query(
-                "SELECT id, idol_id, rss_url, channel FROM sources WHERE enabled = TRUE ORDER BY id ASC",
+                "SELECT source.id, source.idol_id, source.rss_url, source.channel "
+                        + "FROM idr_source source "
+                        + "JOIN idr_idol idol ON idol.id = source.idol_id "
+                        + "WHERE source.enabled = TRUE AND idol.enabled = TRUE ORDER BY source.id ASC",
                 (result, row) -> new WorkerModels.Source(
                         result.getString("id"),
                         result.getString("idol_id"),
@@ -45,13 +48,19 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
 
     @Override
     public void updateSourceStatus(String sourceId, WorkerModels.SourceStatus status) {
+        // 最近成功时间不能被后续失败覆盖；连续失败次数只在成功时归零，供健康看板直接判断异常。
         jdbc.update("""
-                UPDATE sources
+                UPDATE idr_source
                 SET last_fetch_at = NOW(),
                     last_fetch_status = ?,
                     last_fetch_error_code = ?,
                     last_fetch_item_count = ?,
                     last_fetch_new_count = ?,
+                    last_success_at = CASE WHEN ? = 'success' THEN NOW() ELSE last_success_at END,
+                    consecutive_failures = CASE
+                      WHEN ? = 'success' THEN 0
+                      ELSE consecutive_failures + 1
+                    END,
                     updated_at = NOW()
                 WHERE id = ?
                 """,
@@ -59,6 +68,8 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
                 status.errorCode(),
                 status.itemCount(),
                 status.newCount(),
+                status.status(),
+                status.status(),
                 sourceId);
     }
 
@@ -67,7 +78,7 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
     public Optional<WorkerModels.Post> insertPostAndEnqueue(WorkerModels.Post post) {
         Optional<WorkerModels.Post> result = transactions.execute(status -> {
             List<WorkerModels.Post> inserted = jdbc.query("""
-                    INSERT INTO posts
+                    INSERT INTO idr_post
                         (id, idol_id, source_id, channel, title, summary, link, published_at, fetched_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT DO NOTHING
@@ -102,7 +113,7 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
     /** 仅当候选 post 的 {@code (published_at, id)} 更大时替换该 idol 的 outbox。 */
     private void enqueueLatestPost(WorkerModels.Post post) {
         jdbc.update("""
-                INSERT INTO notification_outbox
+                INSERT INTO idr_notification_outbox
                     (idol_id, post_id, status, attempt_count, next_attempt_at,
                      lease_expires_at, error_code, completed_at)
                 VALUES (?, ?, 'pending', 0, NOW(), NULL, NULL, NULL)
@@ -118,9 +129,9 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
                 WHERE (
                   SELECT candidate.published_at > queued.published_at
                       OR (candidate.published_at = queued.published_at AND candidate.id > queued.id)
-                  FROM posts candidate, posts queued
+                  FROM idr_post candidate, idr_post queued
                   WHERE candidate.id = EXCLUDED.post_id
-                    AND queued.id = notification_outbox.post_id
+                    AND queued.id = idr_notification_outbox.post_id
                 )
                 """, post.idolId(), post.id());
     }
@@ -129,8 +140,8 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
     public Optional<WorkerModels.PostWithIdol> loadPostWithIdol(String postId) {
         return jdbc.query("""
                 SELECT p.id, p.idol_id, p.title, p.published_at, i.name AS idol_name
-                FROM posts p
-                JOIN idols i ON i.id = p.idol_id
+                FROM idr_post p
+                JOIN idr_idol i ON i.id = p.idol_id
                 WHERE p.id = ?
                 """,
                 (result, row) -> new WorkerModels.PostWithIdol(
@@ -152,8 +163,8 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
         if (afterId == null) {
             return jdbc.query("""
                     SELECT u.id, u.openid
-                    FROM users u
-                    LEFT JOIN notification_deliveries d
+                    FROM idr_user u
+                    LEFT JOIN idr_notification_delivery d
                       ON d.post_id = ? AND d.user_id = u.id
                     WHERE u.idol_id = ?
                       AND u.subscribe_template_id = ?
@@ -167,8 +178,8 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
         }
         return jdbc.query("""
                 SELECT u.id, u.openid
-                FROM users u
-                LEFT JOIN notification_deliveries d
+                FROM idr_user u
+                LEFT JOIN idr_notification_delivery d
                   ON d.post_id = ? AND d.user_id = u.id
                 WHERE u.idol_id = ?
                   AND u.subscribe_template_id = ?
@@ -187,7 +198,7 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
     public boolean claimDelivery(String postId, UUID userId, String idolId, String templateId) {
         return Boolean.TRUE.equals(transactions.execute(status -> {
             int inserted = jdbc.update("""
-                    INSERT INTO notification_deliveries
+                    INSERT INTO idr_notification_delivery
                         (post_id, user_id, template_id, status, attempt_count, quota_reserved)
                     VALUES (?, ?, ?, 'reserved', 1, TRUE)
                     ON CONFLICT DO NOTHING
@@ -197,7 +208,7 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
                 return false;
             }
             int reserved = jdbc.update("""
-                    UPDATE users
+                    UPDATE idr_user
                     SET subscribe_quota = subscribe_quota - 1, updated_at = NOW()
                     WHERE id = ? AND idol_id = ? AND subscribe_template_id = ?
                       AND subscribe_quota > 0
@@ -214,7 +225,7 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
     @Override
     public void markDeliverySending(String postId, UUID userId) {
         int updated = jdbc.update("""
-                UPDATE notification_deliveries
+                UPDATE idr_notification_delivery
                 SET status = 'sending', attempted_at = NOW(), updated_at = NOW()
                 WHERE post_id = ? AND user_id = ? AND status = 'reserved'
                 """, postId, userId);
@@ -238,7 +249,7 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
                 refundQuota(userId, delivery.templateId());
             }
             jdbc.update("""
-                    UPDATE notification_deliveries
+                    UPDATE idr_notification_delivery
                     SET status = ?, error_code = ?, quota_reserved = ?,
                         next_attempt_at = ?, finished_at = ?, updated_at = NOW()
                     WHERE post_id = ? AND user_id = ?
@@ -268,7 +279,7 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
             if (delivery.quotaReserved()) refundQuota(userId, delivery.templateId());
             boolean exhausted = delivery.attemptCount() >= maxAttempts;
             jdbc.update("""
-                    UPDATE notification_deliveries
+                    UPDATE idr_notification_delivery
                     SET status = ?, error_code = ?, quota_reserved = FALSE,
                         next_attempt_at = ?, finished_at = ?, updated_at = NOW()
                     WHERE post_id = ? AND user_id = ?
@@ -289,13 +300,13 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
     public void failDeliveryAndClearQuota(String postId, UUID userId, String templateId, String errorCode) {
         transactions.executeWithoutResult(status -> {
             jdbc.update("""
-                    UPDATE notification_deliveries
+                    UPDATE idr_notification_delivery
                     SET status = 'failed', error_code = ?, quota_reserved = FALSE,
                         finished_at = NOW(), updated_at = NOW()
                     WHERE post_id = ? AND user_id = ? AND status = 'sending'
                     """, errorCode, postId, userId);
             jdbc.update("""
-                    UPDATE users
+                    UPDATE idr_user
                     SET subscribe_quota = 0, updated_at = NOW()
                     WHERE id = ? AND subscribe_template_id = ?
                     """, userId, templateId);
@@ -305,7 +316,7 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
     @Override
     public void finishDelivery(String postId, UUID userId, String deliveryStatus, String errorCode) {
         int updated = jdbc.update("""
-                UPDATE notification_deliveries
+                UPDATE idr_notification_delivery
                 SET status = ?, error_code = ?, quota_reserved = FALSE,
                     finished_at = NOW(), updated_at = NOW()
                 WHERE post_id = ? AND user_id = ? AND status = 'sending'
@@ -318,10 +329,10 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
         return jdbc.query("""
                 SELECT p.id, p.idol_id, p.title, p.published_at, i.name AS idol_name,
                        u.id AS user_id, u.openid
-                FROM notification_deliveries d
-                JOIN posts p ON p.id = d.post_id
-                JOIN idols i ON i.id = p.idol_id
-                JOIN users u ON u.id = d.user_id
+                FROM idr_notification_delivery d
+                JOIN idr_post p ON p.id = d.post_id
+                JOIN idr_idol i ON i.id = p.idol_id
+                JOIN idr_user u ON u.id = d.user_id
                 WHERE d.status = 'retryable' AND d.next_attempt_at <= NOW()
                 ORDER BY d.next_attempt_at ASC, d.post_id ASC, d.user_id ASC
                 LIMIT ?
@@ -355,7 +366,7 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
             DeliveryState delivery = state.get();
             Optional<UserSubscription> subscription = jdbc.query("""
                     SELECT idol_id, subscribe_template_id
-                    FROM users WHERE id = ? FOR UPDATE
+                    FROM idr_user WHERE id = ? FOR UPDATE
                     """,
                     (result, row) -> new UserSubscription(
                             result.getString("idol_id"),
@@ -369,7 +380,7 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
             if (!compatible || exhausted) {
                 if (delivery.quotaReserved()) refundQuota(userId, delivery.templateId());
                 jdbc.update("""
-                        UPDATE notification_deliveries
+                        UPDATE idr_notification_delivery
                         SET status = 'failed', error_code = ?, quota_reserved = FALSE,
                             next_attempt_at = NULL, finished_at = NOW(), updated_at = NOW()
                         WHERE post_id = ? AND user_id = ?
@@ -378,13 +389,13 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
             }
             if (!delivery.quotaReserved()) {
                 int quota = jdbc.update("""
-                        UPDATE users
+                        UPDATE idr_user
                         SET subscribe_quota = subscribe_quota - 1, updated_at = NOW()
                         WHERE id = ? AND subscribe_quota > 0
                         """, userId);
                 if (quota != 1) {
                     jdbc.update("""
-                            UPDATE notification_deliveries
+                            UPDATE idr_notification_delivery
                             SET status = 'failed', error_code = 'QUOTA_UNAVAILABLE',
                                 next_attempt_at = NULL, finished_at = NOW(), updated_at = NOW()
                             WHERE post_id = ? AND user_id = ?
@@ -393,7 +404,7 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
                 }
             }
             jdbc.update("""
-                    UPDATE notification_deliveries
+                    UPDATE idr_notification_delivery
                     SET status = 'reserved', attempt_count = attempt_count + 1,
                         quota_reserved = TRUE, next_attempt_at = NULL,
                         finished_at = NULL, updated_at = NOW()
@@ -409,14 +420,14 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
         long milliseconds = maxAge.toMillis();
         return transactions.execute(status -> {
             int retrying = jdbc.update("""
-                    UPDATE notification_deliveries
+                    UPDATE idr_notification_delivery
                     SET status = 'retryable', error_code = 'WORKER_INTERRUPTED_BEFORE_SEND',
                         next_attempt_at = NOW(), updated_at = NOW()
                     WHERE status = 'reserved'
                       AND updated_at < NOW() - (?::bigint * INTERVAL '1 millisecond')
                     """, milliseconds);
             int uncertain = jdbc.update("""
-                    UPDATE notification_deliveries
+                    UPDATE idr_notification_delivery
                     SET status = 'uncertain', error_code = 'WORKER_INTERRUPTED',
                         quota_reserved = FALSE, finished_at = NOW(), updated_at = NOW()
                     WHERE status = 'sending'
@@ -430,7 +441,7 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
     @Override
     public int recoverStaleOutbox() {
         return jdbc.update("""
-                UPDATE notification_outbox
+                UPDATE idr_notification_outbox
                 SET status = 'retryable',
                     next_attempt_at = NOW(),
                     lease_expires_at = NULL,
@@ -447,14 +458,14 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
         List<WorkerModels.OutboxTask> claimed = jdbc.query("""
                 WITH candidate AS (
                   SELECT idol_id
-                  FROM notification_outbox
+                  FROM idr_notification_outbox
                   WHERE status IN ('pending', 'retryable')
                     AND next_attempt_at <= NOW()
                   ORDER BY next_attempt_at ASC, idol_id ASC
                   FOR UPDATE SKIP LOCKED
                   LIMIT 1
                 )
-                UPDATE notification_outbox outbox
+                UPDATE idr_notification_outbox outbox
                 SET status = 'processing',
                     attempt_count = LEAST(outbox.attempt_count + 1, 100),
                     lease_expires_at = NOW() + (?::bigint * INTERVAL '1 millisecond'),
@@ -476,7 +487,7 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
     @Override
     public boolean completeOutbox(WorkerModels.OutboxTask task) {
         return jdbc.update("""
-                UPDATE notification_outbox
+                UPDATE idr_notification_outbox
                 SET status = 'completed',
                     lease_expires_at = NULL,
                     error_code = NULL,
@@ -495,7 +506,7 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
             Duration baseDelay) {
         int attempt = Math.min(task.attemptCount(), maxAttempts);
         jdbc.update("""
-                UPDATE notification_outbox
+                UPDATE idr_notification_outbox
                 SET status = 'retryable',
                     next_attempt_at = ?,
                     lease_expires_at = NULL,
@@ -512,7 +523,7 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
     private Optional<DeliveryState> lockDelivery(String postId, UUID userId, String expectedStatus) {
         return jdbc.query("""
                 SELECT attempt_count, quota_reserved, template_id
-                FROM notification_deliveries
+                FROM idr_notification_delivery
                 WHERE post_id = ? AND user_id = ? AND status = ?
                 FOR UPDATE
                 """,
@@ -526,7 +537,7 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
     private Optional<DeliveryState> lockDueDelivery(String postId, UUID userId) {
         return jdbc.query("""
                 SELECT attempt_count, quota_reserved, template_id
-                FROM notification_deliveries
+                FROM idr_notification_delivery
                 WHERE post_id = ? AND user_id = ? AND status = 'retryable'
                   AND next_attempt_at <= NOW()
                 FOR UPDATE
@@ -540,7 +551,7 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
 
     private void refundQuota(UUID userId, String templateId) {
         jdbc.update("""
-                UPDATE users
+                UPDATE idr_user
                 SET subscribe_quota = LEAST(subscribe_quota + 1, ?), updated_at = NOW()
                 WHERE id = ? AND subscribe_template_id = ?
                 """, MAX_SUBSCRIBE_QUOTA, userId, templateId);

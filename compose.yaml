@@ -106,10 +106,10 @@ services:
       retries: 12
 
   rsshub:
-    # 从固定的 rsshub submodule 源码构建，确保自定义 route 与仓库记录的 SHA 一致。
+    # 以固定 submodule 源码构建，主仓库 Dockerfile 仅承载国内镜像兼容配置，避免修改子模块。
     build:
       context: ./rsshub
-      dockerfile: Dockerfile
+      dockerfile: ../deploy/rsshub/Dockerfile
       args:
         # 默认内置 Chromium；资源受限且 route 无浏览器依赖时可改为 1。
         PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "${RSSHUB_PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD:-0}"

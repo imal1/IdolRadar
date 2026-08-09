@@ -156,6 +156,7 @@ const requiredFiles = [
   '.github/workflows/release.yml',
   'compose.yaml',
   'backend/Dockerfile',
+  'deploy/rsshub/Dockerfile',
   'backend/maven-settings.docker.xml',
   '.gitmodules',
   'docs/RSSHUB-DEVELOPMENT.md',
@@ -182,6 +183,8 @@ const requiredFiles = [
   'backend/src/main/resources/db/migration/V2__notification_delivery_state.sql',
   'backend/src/main/resources/db/migration/V3__notification_outbox.sql',
   'backend/src/main/resources/db/migration/V4__remove_legacy_demo_catalog.sql',
+  'backend/src/main/resources/db/migration/V5__standardize_database_schema.sql',
+  'backend/src/main/resources/db/migration/V6__complete_feature_schema.sql',
   'database/idols.seed.jsonl',
   'database/sources.seed.jsonl'
 ];
@@ -225,6 +228,70 @@ if (fs.existsSync(demoCleanupMigrationPath)) {
   for (const demoId of ['idol_demo_lin_wan', 'idol_demo_su_nian']) {
     if (!migration.includes(demoId)) {
       addError(`V4__remove_legacy_demo_catalog.sql: 未清理历史示例 ${demoId}`);
+    }
+  }
+}
+
+const standardizedSchemaMigrationPath = path.join(
+  root,
+  'backend/src/main/resources/db/migration/V5__standardize_database_schema.sql'
+);
+if (fs.existsSync(standardizedSchemaMigrationPath)) {
+  const migration = fs.readFileSync(standardizedSchemaMigrationPath, 'utf8');
+  const businessTables = [
+    'idr_idol',
+    'idr_source',
+    'idr_post',
+    'idr_user',
+    'idr_user_session',
+    'idr_notification_delivery',
+    'idr_notification_outbox',
+    'idr_admin_account',
+    'idr_admin_session',
+    'idr_admin_audit_log',
+    'idr_user_guard',
+    'idr_user_source_mute',
+    'idr_idol_request',
+    'idr_idol_request_supporter'
+  ];
+  for (const table of businessTables) {
+    if (!new RegExp(`(?:RENAME TO|CREATE TABLE)\\s+${table}\\b`, 'i').test(migration)) {
+      addError(`V5__standardize_database_schema.sql: 缺少 ${table} 表定义或重命名`);
+    }
+    if (!new RegExp(`COMMENT ON TABLE\\s+${table}\\b`, 'i').test(migration)) {
+      addError(`V5__standardize_database_schema.sql: ${table} 缺少数据库表注释`);
+    }
+    if (!new RegExp(`COMMENT ON COLUMN\\s+${table}\\.`, 'i').test(migration)) {
+      addError(`V5__standardize_database_schema.sql: ${table} 缺少数据库字段注释`);
+    }
+  }
+  if (/ALTER TABLE\s+flyway_schema_history/i.test(migration)) {
+    addError('V5__standardize_database_schema.sql: 不得修改 Flyway 元数据表');
+  }
+}
+
+const completedFeatureSchemaMigrationPath = path.join(
+  root,
+  'backend/src/main/resources/db/migration/V6__complete_feature_schema.sql'
+);
+if (fs.existsSync(completedFeatureSchemaMigrationPath)) {
+  const migration = fs.readFileSync(completedFeatureSchemaMigrationPath, 'utf8');
+  const requiredPatterns = [
+    ['源重复唯一约束', /UNIQUE\s*\(idol_id,\s*rss_url\)/i],
+    ['申请通过后的正式 idol 关联', /approved_idol_id\s+varchar\(128\)/i],
+    ['用户昵称字段', /ADD COLUMN\s+nickname\s+varchar\(128\)/i],
+    ['用户头像字段', /ADD COLUMN\s+avatar_url\s+text/i],
+    ['用户资料授权时间', /ADD COLUMN\s+profile_authorized_at\s+timestamptz/i],
+    ['用户时间统计索引', /CREATE INDEX\s+idx_idr_user_created_at/i],
+    ['投递时间统计索引', /CREATE INDEX\s+idx_idr_notification_delivery_created_at/i],
+    ['申请正式 idol 字段注释', /COMMENT ON COLUMN\s+idr_idol_request\.approved_idol_id/i],
+    ['用户昵称字段注释', /COMMENT ON COLUMN\s+idr_user\.nickname/i],
+    ['用户头像字段注释', /COMMENT ON COLUMN\s+idr_user\.avatar_url/i],
+    ['资料授权时间字段注释', /COMMENT ON COLUMN\s+idr_user\.profile_authorized_at/i]
+  ];
+  for (const [label, pattern] of requiredPatterns) {
+    if (!pattern.test(migration)) {
+      addError(`V6__complete_feature_schema.sql: 缺少${label}`);
     }
   }
 }
@@ -418,6 +485,9 @@ if (fs.existsSync(composePath)) {
   if (!/context:\s*\.\/backend/.test(compose)) {
     addError('compose.yaml: Java 镜像构建上下文必须限制为 backend/');
   }
+  if (!/context:\s*\.\/rsshub[\s\S]*?dockerfile:\s*\.\.\/deploy\/rsshub\/Dockerfile/.test(compose)) {
+    addError('compose.yaml: RSSHub 必须使用主仓库维护的国内网络兼容 Dockerfile');
+  }
   if (/1200:1200/.test(compose)) {
     addError('compose.yaml: RSSHub 不得直接暴露公网端口');
   }
@@ -501,9 +571,10 @@ for (const source of sources) {
   const hasRssUrl = typeof source.rssUrl === 'string' && Boolean(source.rssUrl.trim());
   const hasRsshubRoute = typeof source.rsshubRoute === 'string' && Boolean(source.rsshubRoute.trim());
   if (!source._id || !source.idolId || (!hasRssUrl && !hasRsshubRoute)
+    || typeof source.displayName !== 'string' || !source.displayName.trim()
     || typeof source.channel !== 'string' || !source.channel.trim()
     || typeof source.enabled !== 'boolean') {
-    addError(`${relative(sourceSeedPath)}: source 必须包含 _id/idolId、rssUrl 或 rsshubRoute、channel/enabled`);
+    addError(`${relative(sourceSeedPath)}: source 必须包含 _id/idolId/displayName、rssUrl 或 rsshubRoute、channel/enabled`);
   }
   if (hasRssUrl === hasRsshubRoute) {
     addError(`${relative(sourceSeedPath)}: ${source._id || '(unknown)'} 必须且只能配置 rssUrl 或 rsshubRoute`);

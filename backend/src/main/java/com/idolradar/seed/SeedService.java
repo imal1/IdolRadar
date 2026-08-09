@@ -54,6 +54,7 @@ public class SeedService {
                         requiredText(entry.node(), "_id", entry.location()),
                         requiredText(entry.node(), "idolId", entry.location()),
                         sourceUrl(entry.node(), entry.location()),
+                        requiredText(entry.node(), "displayName", entry.location()),
                         optionalText(entry.node(), "channel", "RSS", entry.location()),
                         optionalBoolean(entry.node(), "enabled", true, entry.location()),
                         fetchStatus(entry.node(), entry.location())))
@@ -62,15 +63,16 @@ public class SeedService {
         for (IdolSeed idol : idols) {
             // IS DISTINCT FROM 兼容 NULL，并避免内容未变时制造无意义的 updated_at/数据库写放大。
             jdbc.update("""
-                    INSERT INTO idols (id, name, avatar, bio, enabled)
+                    INSERT INTO idr_idol (id, name, avatar, bio, enabled)
                     VALUES (?, ?, ?, ?, ?)
                     ON CONFLICT (id) DO UPDATE SET
                       name = EXCLUDED.name,
                       avatar = EXCLUDED.avatar,
                       bio = EXCLUDED.bio,
                       enabled = EXCLUDED.enabled,
+                      version = idr_idol.version + 1,
                       updated_at = now()
-                    WHERE (idols.name, idols.avatar, idols.bio, idols.enabled)
+                    WHERE (idr_idol.name, idr_idol.avatar, idr_idol.bio, idr_idol.enabled)
                       IS DISTINCT FROM
                       (EXCLUDED.name, EXCLUDED.avatar, EXCLUDED.bio, EXCLUDED.enabled)
                     """, idol.id(), idol.name(), idol.avatar(), idol.bio(), idol.enabled());
@@ -79,19 +81,24 @@ public class SeedService {
         for (SourceSeed source : sources) {
             // last_fetch_* 是 Worker 运行状态；重复导入配置时不得覆盖抓取进度。
             jdbc.update("""
-                    INSERT INTO sources (id, idol_id, rss_url, channel, enabled, last_fetch_status)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO idr_source
+                      (id, idol_id, rss_url, display_name, channel, enabled, last_fetch_status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT (id) DO UPDATE SET
                       idol_id = EXCLUDED.idol_id,
                       rss_url = EXCLUDED.rss_url,
+                      display_name = EXCLUDED.display_name,
                       channel = EXCLUDED.channel,
                       enabled = EXCLUDED.enabled,
+                      version = idr_source.version + 1,
                       updated_at = now()
-                    WHERE (sources.idol_id, sources.rss_url, sources.channel, sources.enabled)
+                    WHERE (idr_source.idol_id, idr_source.rss_url, idr_source.display_name,
+                           idr_source.channel, idr_source.enabled)
                       IS DISTINCT FROM
-                      (EXCLUDED.idol_id, EXCLUDED.rss_url, EXCLUDED.channel, EXCLUDED.enabled)
-                    """, source.id(), source.idolId(), source.rssUrl(), source.channel(),
-                    source.enabled(), source.lastFetchStatus());
+                      (EXCLUDED.idol_id, EXCLUDED.rss_url, EXCLUDED.display_name,
+                       EXCLUDED.channel, EXCLUDED.enabled)
+                    """, source.id(), source.idolId(), source.rssUrl(), source.displayName(),
+                    source.channel(), source.enabled(), source.lastFetchStatus());
         }
 
         return new SeedResult(idols.size(), sources.size());
@@ -232,6 +239,7 @@ public class SeedService {
             String id,
             String idolId,
             String rssUrl,
+            String displayName,
             String channel,
             boolean enabled,
             String lastFetchStatus) {
