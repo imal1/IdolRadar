@@ -33,6 +33,54 @@ describeWithDevTools('微信小程序冒烟测试', () => {
     expect(shell).not.toBeNull();
     expect(await shell.attribute('class')).toContain('picker-page');
   });
+
+  test('推送落地会继续分页并定位对应动态', async () => {
+    // 阻止页面启动请求干扰场景数据；页面方法和滚动仍由官方自动化协议真实执行。
+    await miniProgram.evaluate(function () {
+      getApp().ensureBootstrap = function () {
+        return new Promise(function () {});
+      };
+    });
+    const page = await miniProgram.reLaunch('/pages/radar/index?postId=post-25');
+    const firstPage = Array.from({ length: 20 }, (_, index) => ({
+      id: `post-${index + 1}`,
+      title: `动态 ${index + 1}`,
+    }));
+    await page.setData({
+      loading: false,
+      allPosts: firstPage,
+      latestPost: firstPage[0],
+      previousPosts: firstPage.slice(1),
+      hasMore: true,
+      nextCursor: 'cursor-20',
+      deepLinkPostId: 'post-25',
+    });
+    await miniProgram.evaluate(function () {
+      const current = getCurrentPages()[0];
+      current.loadMore = function () {
+        const nextPage = Array.from({ length: 10 }, function (_, index) {
+          const number = index + 21;
+          return { id: 'post-' + number, title: '动态 ' + number };
+        });
+        const posts = this.data.allPosts.concat(nextPage);
+        this.setData({
+          allPosts: posts,
+          latestPost: posts[0],
+          previousPosts: posts.slice(1),
+          hasMore: false,
+          nextCursor: null,
+          loadingMore: false,
+        });
+        return Promise.resolve();
+      };
+    });
+
+    await page.callMethod('scrollToDeepLink');
+    await page.waitFor(500);
+
+    expect(await page.$('#post-post-25')).not.toBeNull();
+    expect(Number(await page.scrollTop())).toBeGreaterThan(0);
+  });
 });
 
 // 保留一个无需开发者工具即可执行的用例，让依赖安装和测试发现能在普通 CI 中被验证。

@@ -264,21 +264,36 @@ Page({
 
   scrollToDeepLink: function () {
     if (!this.data.deepLinkPostId || !this.data.latestPost) {
-      return;
+      return Promise.resolve(false);
     }
     var targetIndex = this.data.allPosts.findIndex(function (post) {
       return post.id === this.data.deepLinkPostId;
     }, this);
     if (targetIndex < 0) {
-      return;
+      if (!this.data.hasMore || !this.data.nextCursor || this.data.loadingMore) {
+        return Promise.resolve(false);
+      }
+      var page = this;
+      var previousCount = this.data.allPosts.length;
+      var previousCursor = this.data.nextCursor;
+      // ponytail: MVP 沿用现有游标分页查找；历史量影响落地延迟时再增加按 postId 查询接口。
+      return this.loadMore().then(function () {
+        var progressed = page.data.allPosts.length !== previousCount
+          || page.data.nextCursor !== previousCursor
+          || !page.data.hasMore;
+        return progressed ? page.scrollToDeepLink() : false;
+      });
     }
     // 最新卡片与历史卡片使用不同 DOM id；按动态 ID 选择目标，避免所有推送都滚到最新一条。
     var selector = targetIndex === 0
       ? '#latest-post'
       : '#post-' + this.data.allPosts[targetIndex].id;
-    setTimeout(function () {
-      wx.pageScrollTo({ selector: selector, duration: 300 });
-    }, 120);
+    return new Promise(function (resolve) {
+      setTimeout(function () {
+        wx.pageScrollTo({ selector: selector, duration: 300 });
+        resolve(true);
+      }, 120);
+    });
   },
 
   retry: function () {
