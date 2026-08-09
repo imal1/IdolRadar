@@ -394,8 +394,25 @@ if (databaseUrl) {
     addError('.env/process: POSTGRES_PORT 必须是 1..65535');
   }
 }
-for (const name of ['WECHAT_APP_ID', 'WECHAT_APP_SECRET', 'SUBSCRIBE_TEMPLATE_ID']) {
+for (const name of [
+  'WECHAT_APP_ID',
+  'WECHAT_APP_SECRET',
+  'SUBSCRIBE_TEMPLATE_ID',
+  'SUBSCRIBE_IDOL_FIELD',
+  'SUBSCRIBE_TITLE_FIELD',
+  'SUBSCRIBE_TIME_FIELD'
+]) {
   if (isPlaceholder(dotenv[name])) placeholder(`.env/process: ${name} 仍是占位值或未配置`);
+}
+for (const [name, type] of [
+  ['SUBSCRIBE_IDOL_FIELD', 'thing'],
+  ['SUBSCRIBE_TITLE_FIELD', 'thing'],
+  ['SUBSCRIBE_TIME_FIELD', 'time']
+]) {
+  const value = dotenv[name];
+  if (!isPlaceholder(value) && !new RegExp(`^${type}\\d+$`).test(value)) {
+    addError(`.env/process: ${name} 必须匹配 ${type}<number>`);
+  }
 }
 const rsshubBaseUrl = environmentValue(dotenv, ['RSSHUB_BASE_URL']);
 const rssTrustedOrigins = environmentValue(dotenv, ['RSS_TRUSTED_ORIGINS'])
@@ -506,6 +523,9 @@ if (fs.existsSync(composePath)) {
     'IDOLRADAR_WECHAT_APP_ID',
     'IDOLRADAR_WECHAT_APP_SECRET',
     'IDOLRADAR_SUBSCRIBE_TEMPLATE_ID',
+    'IDOLRADAR_WORKER_SUBSCRIBE_IDOL_FIELD',
+    'IDOLRADAR_WORKER_SUBSCRIBE_TITLE_FIELD',
+    'IDOLRADAR_WORKER_SUBSCRIBE_TIME_FIELD',
     'IDOLRADAR_WORKER_RSS_TIMEOUT',
     'IDOLRADAR_WORKER_RSS_MAX_RESPONSE_BYTES',
     'IDOLRADAR_WORKER_NOTIFICATION_MAX_ATTEMPTS'

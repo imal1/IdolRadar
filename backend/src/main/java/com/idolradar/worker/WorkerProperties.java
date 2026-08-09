@@ -18,6 +18,9 @@ public class WorkerProperties {
     private String wechatAppSecret = "";
     private URI wechatApiBaseUrl = URI.create("https://api.weixin.qq.com");
     private String subscribeTemplateId = "";
+    private String subscribeIdolField = "thing1";
+    private String subscribeTitleField = "thing2";
+    private String subscribeTimeField = "time3";
     private boolean notificationsEnabled = true;
     private String miniprogramState = "formal";
     private Duration rssTimeout = Duration.ofSeconds(10);
@@ -39,6 +42,12 @@ public class WorkerProperties {
             requireText(wechatAppId, "idolradar.worker.wechat-app-id");
             requireText(wechatAppSecret, "idolradar.worker.wechat-app-secret");
             requireText(subscribeTemplateId, "idolradar.worker.subscribe-template-id");
+            requireTemplateField(subscribeIdolField, "thing", "idolradar.worker.subscribe-idol-field");
+            requireTemplateField(subscribeTitleField, "thing", "idolradar.worker.subscribe-title-field");
+            requireTemplateField(subscribeTimeField, "time", "idolradar.worker.subscribe-time-field");
+            if (subscribeIdolField.equals(subscribeTitleField)) {
+                throw new IllegalStateException("WeChat subscribe template fields must be distinct");
+            }
             if (!"https".equalsIgnoreCase(wechatApiBaseUrl.getScheme())) {
                 throw new IllegalStateException("idolradar.worker.wechat-api-base-url must use HTTPS");
             }
@@ -84,6 +93,13 @@ public class WorkerProperties {
         if (value == null || value.isBlank()) throw new IllegalStateException(name + " is required");
     }
 
+    /** 微信下发的字段序号由审核模板决定，启动前阻止错误类型进入真实 fanout。 */
+    private static void requireTemplateField(String value, String type, String name) {
+        if (value == null || !value.matches(type + "\\d+")) {
+            throw new IllegalStateException(name + " must match " + type + "<number>");
+        }
+    }
+
     public String getWechatAppId() { return wechatAppId; }
     public void setWechatAppId(String value) { this.wechatAppId = value; }
     public String getWechatAppSecret() { return wechatAppSecret; }
@@ -92,6 +108,12 @@ public class WorkerProperties {
     public void setWechatApiBaseUrl(URI value) { this.wechatApiBaseUrl = value; }
     public String getSubscribeTemplateId() { return subscribeTemplateId; }
     public void setSubscribeTemplateId(String value) { this.subscribeTemplateId = value; }
+    public String getSubscribeIdolField() { return subscribeIdolField; }
+    public void setSubscribeIdolField(String value) { this.subscribeIdolField = value; }
+    public String getSubscribeTitleField() { return subscribeTitleField; }
+    public void setSubscribeTitleField(String value) { this.subscribeTitleField = value; }
+    public String getSubscribeTimeField() { return subscribeTimeField; }
+    public void setSubscribeTimeField(String value) { this.subscribeTimeField = value; }
     public boolean isNotificationsEnabled() { return notificationsEnabled; }
     public void setNotificationsEnabled(boolean value) { this.notificationsEnabled = value; }
     public String getMiniprogramState() { return miniprogramState; }

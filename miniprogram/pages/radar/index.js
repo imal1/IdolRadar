@@ -266,8 +266,18 @@ Page({
     if (!this.data.deepLinkPostId || !this.data.latestPost) {
       return;
     }
+    var targetIndex = this.data.allPosts.findIndex(function (post) {
+      return post.id === this.data.deepLinkPostId;
+    }, this);
+    if (targetIndex < 0) {
+      return;
+    }
+    // 最新卡片与历史卡片使用不同 DOM id；按动态 ID 选择目标，避免所有推送都滚到最新一条。
+    var selector = targetIndex === 0
+      ? '#latest-post'
+      : '#post-' + this.data.allPosts[targetIndex].id;
     setTimeout(function () {
-      wx.pageScrollTo({ selector: '#latest-post', duration: 300 });
+      wx.pageScrollTo({ selector: selector, duration: 300 });
     }, 120);
   },
 

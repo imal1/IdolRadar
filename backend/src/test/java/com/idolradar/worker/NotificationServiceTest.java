@@ -14,12 +14,14 @@ import static org.mockito.Mockito.when;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 import com.idolradar.config.BackendProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class NotificationServiceTest {
     private final NotificationRepository repository = mock(NotificationRepository.class);
@@ -42,6 +44,39 @@ class NotificationServiceTest {
                 "post-1", "idol-1", "爱豆", "一条新动态", Instant.parse("2026-01-01T00:00:00Z"));
         user = new WorkerModels.UserTarget(UUID.randomUUID(), "openid-secret");
         when(repository.claimDelivery(post.id(), user.id(), post.idolId(), "template-1")).thenReturn(true);
+    }
+
+    @Test
+    void sendsApprovedTemplateFieldsWithUnicodeTruncationAndPostDeepLink() {
+        properties.setSubscribeIdolField("thing5");
+        properties.setSubscribeTitleField("thing7");
+        properties.setSubscribeTimeField("time9");
+        post = new WorkerModels.PostWithIdol(
+                "post-1",
+                "idol-1",
+                "12345678901234567890尾",
+                "😀".repeat(21),
+                Instant.parse("2026-01-01T00:00:00Z"));
+        when(repository.loadPostWithIdol(post.id())).thenReturn(Optional.of(post));
+        when(repository.loadEligibleUsers(post.id(), post.idolId(), "template-1", null, 100))
+                .thenReturn(List.of(user));
+        when(repository.claimDelivery(post.id(), user.id(), post.idolId(), "template-1")).thenReturn(true);
+
+        service.sendPost(post.id());
+
+        ArgumentCaptor<WorkerModels.SubscribeMessage> message =
+                ArgumentCaptor.forClass(WorkerModels.SubscribeMessage.class);
+        verify(wechat).sendSubscribeMessage(message.capture(), any());
+        assertThat(message.getValue()).isEqualTo(new WorkerModels.SubscribeMessage(
+                user.openId(),
+                "template-1",
+                "pages/radar/index?postId=post-1",
+                Map.of(
+                        "thing5", Map.of("value", "12345678901234567890"),
+                        "thing7", Map.of("value", "😀".repeat(20)),
+                        "time9", Map.of("value", "08:00")),
+                "formal",
+                "zh_CN"));
     }
 
     @Test

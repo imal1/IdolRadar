@@ -36,8 +36,9 @@ public class NotificationService {
     private static final Logger log = LoggerFactory.getLogger(NotificationService.class);
     private static final Set<Integer> USER_TERMINAL_CODES = Set.of(40003, 43101);
     private static final Set<Integer> GLOBAL_ABORT_CODES = Set.of(-1, 40037, 41030, 45009, 47003);
+    // 微信 time.DATA 只接受 24 小时制时间，不能发送 yyyy-MM-dd HH:mm。
     private static final DateTimeFormatter MESSAGE_TIME = DateTimeFormatter
-            .ofPattern("yyyy-MM-dd HH:mm")
+            .ofPattern("HH:mm")
             .withZone(ZoneId.of("Asia/Shanghai"));
 
     private final NotificationRepository repository;
@@ -228,9 +229,9 @@ public class NotificationService {
 
     WorkerModels.SubscribeMessage buildMessage(WorkerModels.PostWithIdol post, String openId) {
         Map<String, Map<String, String>> data = Map.of(
-                "thing1", Map.of("value", truncateThing(post.idolName(), "爱豆")),
-                "thing2", Map.of("value", truncateThing(post.title(), "有新动态")),
-                "time3", Map.of("value", MESSAGE_TIME.format(post.publishedAt())));
+                properties.getSubscribeIdolField(), Map.of("value", truncateThing(post.idolName(), "爱豆")),
+                properties.getSubscribeTitleField(), Map.of("value", truncateThing(post.title(), "有新动态")),
+                properties.getSubscribeTimeField(), Map.of("value", MESSAGE_TIME.format(post.publishedAt())));
         return new WorkerModels.SubscribeMessage(
                 openId,
                 backendProperties.subscribeTemplateId(),
