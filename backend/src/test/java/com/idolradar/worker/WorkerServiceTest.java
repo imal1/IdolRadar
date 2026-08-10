@@ -23,6 +23,16 @@ import org.junit.jupiter.api.Test;
 
 class WorkerServiceTest {
     @Test
+    void rejectsSubscribeFieldsWhoseTypesDoNotMatchTheApprovedTemplateContract() {
+        WorkerProperties properties = workerProperties();
+        properties.setSubscribeIdolField("time1");
+
+        assertThatThrownBy(properties::validateForRun)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("idolradar.worker.subscribe-idol-field must match thing<number>");
+    }
+
+    @Test
     void transformsRssHubWeiboEntryBeforePersistence() {
         String rss = """
                 <?xml version="1.0" encoding="UTF-8"?>

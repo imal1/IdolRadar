@@ -57,12 +57,12 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
         }
 
         int sourceCount = jdbc.sql(
-                        "SELECT COUNT(*)::integer FROM sources WHERE idol_id = :idolId AND enabled = TRUE")
+                        "SELECT COUNT(*)::integer FROM idr_source WHERE idol_id = :idolId AND enabled = TRUE")
                 .param("idolId", user.idolId())
                 .query(Integer.class)
                 .single();
         int todayPosts = jdbc.sql(
-                        "SELECT COUNT(*)::integer FROM posts "
+                        "SELECT COUNT(*)::integer FROM idr_post "
                                 + "WHERE idol_id = :idolId AND published_at >= :startOfDay")
                 .param("idolId", user.idolId())
                 // 产品指标中的“今日”按中国标准时间计算，不受服务器时区影响。
@@ -104,7 +104,7 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
         // 单次聚合各 idol 的来源数，避免逐 idol 产生 N+1 查询。
         List<Map<String, Object>> idols = jdbc.sql(
                         "SELECT i.*, COUNT(s.id) FILTER (WHERE s.enabled = TRUE)::integer AS source_count "
-                                + "FROM idols i LEFT JOIN sources s ON s.idol_id = i.id "
+                                + "FROM idr_idol i LEFT JOIN idr_source s ON s.idol_id = i.id "
                                 + "WHERE i.enabled = TRUE GROUP BY i.id ORDER BY i.name ASC, i.id ASC")
                 .query((resultSet, rowNumber) -> serializeIdol(mapIdol(resultSet), resultSet.getInt("source_count")))
                 .list();
@@ -124,15 +124,28 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
                 HttpStatus.NOT_FOUND, "IDOL_NOT_FOUND", "守护对象不存在或已停用"));
 
         if (!Objects.equals(user.idolId(), idolId)) {
-            jdbc.sql("UPDATE users SET idol_id = :idolId, guarding_since = NOW(), updated_at = NOW() "
+            jdbc.sql("UPDATE idr_user SET idol_id = :idolId, guarding_since = NOW(), "
+                            + "first_guarded_at = COALESCE(first_guarded_at, NOW()), updated_at = NOW() "
                             + "WHERE id = :userId")
                     .param("idolId", idolId)
                     .param("userId", user.id())
                     .update();
+            // Expand 阶段保留旧字段并同步写守护关联，保证 API/Worker 分批迁移期间数据一致。
+            jdbc.sql("DELETE FROM idr_user_guard WHERE user_id = :userId AND idol_id <> :idolId")
+                    .param("userId", user.id())
+                    .param("idolId", idolId)
+                    .update();
+            jdbc.sql("INSERT INTO idr_user_guard (user_id, idol_id, guarding_since) "
+                            + "VALUES (:userId, :idolId, NOW()) "
+                            + "ON CONFLICT (user_id, idol_id) DO UPDATE SET "
+                            + "guarding_since = EXCLUDED.guarding_since, updated_at = NOW()")
+                    .param("userId", user.id())
+                    .param("idolId", idolId)
+                    .update();
         }
         UserRow updated = findUser(openId).orElseThrow();
         int sourceCount = jdbc.sql(
-                        "SELECT COUNT(*)::integer FROM sources WHERE idol_id = :idolId AND enabled = TRUE")
+                        "SELECT COUNT(*)::integer FROM idr_source WHERE idol_id = :idolId AND enabled = TRUE")
                 .param("idolId", idolId)
                 .query(Integer.class)
                 .single();
@@ -156,10 +169,11 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
         // 单条条件 UPDATE 原子处理额度累加、模板重置、上限和冷却时间。
         // 把这些约束留在 PostgreSQL，避免并发授权确认重复增加额度。
         Optional<UserRow> updated = jdbc.sql(
-                        "UPDATE users SET subscribe_quota = CASE "
+                        "UPDATE idr_user SET subscribe_quota = CASE "
                                 + "WHEN subscribe_template_id IS DISTINCT FROM :templateId THEN 1 "
                                 + "ELSE subscribe_quota + 1 END, "
-                                + "subscribe_template_id = :templateId, subscribed_at = NOW(), updated_at = NOW() "
+                                + "subscribe_template_id = :templateId, subscribed_at = NOW(), "
+                                + "first_subscribed_at = COALESCE(first_subscribed_at, NOW()), updated_at = NOW() "
                                 + "WHERE id = :userId "
                                 + "AND (subscribe_template_id IS DISTINCT FROM :templateId "
                                 + "OR subscribe_quota < :maxQuota) "
@@ -193,14 +207,14 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
     }
 
     private Optional<UserRow> findUser(String openId) {
-        return jdbc.sql("SELECT * FROM users WHERE openid = :openId")
+        return jdbc.sql("SELECT * FROM idr_user WHERE openid = :openId")
                 .param("openId", openId)
                 .query(this::mapUser)
                 .optional();
     }
 
     private Optional<IdolRow> findIdol(String idolId, boolean enabledOnly) {
-        String sql = "SELECT * FROM idols WHERE id = :idolId" + (enabledOnly ? " AND enabled = TRUE" : "");
+        String sql = "SELECT * FROM idr_idol WHERE id = :idolId" + (enabledOnly ? " AND enabled = TRUE" : "");
         return jdbc.sql(sql)
                 .param("idolId", idolId)
                 .query((resultSet, rowNumber) -> mapIdol(resultSet))
@@ -214,7 +228,7 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
                 ? ""
                 : " AND (published_at, id) < (:publishedAt, :postId)";
         JdbcClient.StatementSpec statement = jdbc.sql(
-                        "SELECT * FROM posts WHERE idol_id = :idolId" + cursorCondition
+                        "SELECT * FROM idr_post WHERE idol_id = :idolId" + cursorCondition
                                 + " ORDER BY published_at DESC, id DESC LIMIT :limit")
                 .param("idolId", idolId)
                 .param("limit", PAGE_SIZE + 1);

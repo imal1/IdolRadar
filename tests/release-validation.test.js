@@ -42,3 +42,22 @@ test('release validation rejects unsafe production RSS URLs', (t) => {
   assert.notEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
   assert.match(result.stderr, /rssUrl 不安全或无效/);
 });
+
+test('release validation rejects mismatched WeChat subscribe field types', () => {
+  const result = spawnSync(
+    process.execPath,
+    ['scripts/validate-project.js', '--allow-placeholders'],
+    {
+      cwd: root,
+      encoding: 'utf8',
+      env: Object.assign({}, process.env, {
+        SUBSCRIBE_IDOL_FIELD: 'time1',
+        SUBSCRIBE_TITLE_FIELD: 'thing2',
+        SUBSCRIBE_TIME_FIELD: 'time3'
+      })
+    }
+  );
+
+  assert.notEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stderr, /SUBSCRIBE_IDOL_FIELD 必须匹配 thing<number>/);
+});

@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="IdolRadar 后台管理可点击交互原型" />
+    <title>IdolRadar 管理后台原型</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./app.js" defer></script>
+  </head>
+  <body>
+    <section class="login-screen" id="login-screen" aria-labelledby="login-title">
+      <div class="login-visual">
+        <div class="brand brand--light">
+          <span class="brand__mark" aria-hidden="true"><span></span></span>
+          <span>
+            <strong>IdolRadar</strong>
+            <small>管理后台</small>
+          </span>
+        </div>
+        <div class="login-visual__content">
+          <span class="eyebrow eyebrow--light">REAL-TIME SIGNAL CENTER</span>
+          <h1>把每一次更新，<br />变成可追踪的信号。</h1>
+          <p>统一管理 idol、动态源、抓取健康度与微信推送闭环。</p>
+          <div class="login-stat-row" aria-label="平台运行摘要">
+            <div><strong>14</strong><span>运行中信号源</span></div>
+            <div><strong>96.4%</strong><span>推送成功率</span></div>
+            <div><strong>2</strong><span>待处理异常</span></div>
+          </div>
+        </div>
+        <p class="login-visual__foot">IdolRadar Admin · Prototype v1</p>
+      </div>
+
+      <div class="login-panel">
+        <form class="login-card" id="login-form">
+          <span class="eyebrow">管理员入口</span>
+          <h2 id="login-title">欢迎回来</h2>
+          <p>这是可点击设计原型，不会连接真实后台。</p>
+          <label>
+            <span>管理员账号</span>
+            <input id="login-account" name="account" value="admin" autocomplete="username" required />
+          </label>
+          <label>
+            <span>密码</span>
+            <span class="password-field">
+              <input id="login-password" name="password" type="password" value="Demo@2026" autocomplete="current-password" required />
+              <button class="icon-button" id="toggle-password" type="button" aria-label="显示密码"></button>
+            </span>
+          </label>
+          <div class="login-options">
+            <label class="check"><input type="checkbox" checked /> <span>保持登录</span></label>
+            <button class="text-button" type="button" data-toast="原型未接入找回密码流程">忘记密码</button>
+          </div>
+          <button class="button button--primary button--wide" type="submit">进入管理后台</button>
+          <p class="prototype-note">演示账号已预填，直接点击进入。</p>
+        </form>
+      </div>
+    </section>
+
+    <div class="app-shell is-hidden" id="app-shell">
+      <aside class="sidebar" id="sidebar">
+        <div class="brand">
+          <span class="brand__mark" aria-hidden="true"><span></span></span>
+          <span>
+            <strong>IdolRadar</strong>
+            <small>管理后台</small>
+          </span>
+        </div>
+
+        <nav class="nav" aria-label="后台主导航">
+          <button class="nav__item is-active" data-page="dashboard" type="button"></button>
+          <button class="nav__item" data-page="idols" type="button"></button>
+          <button class="nav__item" data-page="sources" type="button"></button>
+          <button class="nav__item" data-page="deliveries" type="button"></button>
+          <button class="nav__item" data-page="requests" type="button"></button>
+          <button class="nav__item" data-page="audit" type="button"></button>
+        </nav>
+
+        <div class="sidebar__bottom">
+          <div class="system-state"><span></span><div><strong>系统运行正常</strong><small>最后检查 1 分钟前</small></div></div>
+          <button class="account-card" id="sidebar-account" type="button">
+            <span class="avatar">管</span>
+            <span><strong>管理员</strong><small>超级管理员</small></span>
+            <span aria-hidden="true">•••</span>
+          </button>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div class="topbar__title">
+            <button class="icon-button mobile-menu" id="mobile-menu" type="button" aria-label="打开导航"></button>
+            <div>
+              <span class="eyebrow">管理后台</span>
+              <h1 id="page-title">核心指标</h1>
+            </div>
+          </div>
+          <div class="topbar__actions">
+            <span class="update-time" id="update-time"></span>
+            <button class="icon-button notification-button" type="button" data-toast="当前没有新的系统通知" aria-label="系统通知"></button>
+            <button class="account-trigger" id="account-trigger" type="button">
+              <span class="avatar">管</span><span>管理员</span><span aria-hidden="true">⌄</span>
+            </button>
+          </div>
+        </header>
+        <div class="page" id="page-root" tabindex="-1"></div>
+      </main>
+    </div>
+
+    <dialog class="modal" id="modal" aria-labelledby="modal-title">
+      <form method="dialog" class="modal__surface" id="modal-surface">
+        <div class="modal__header">
+          <div><span class="eyebrow" id="modal-eyebrow">管理操作</span><h2 id="modal-title">标题</h2></div>
+          <button class="icon-button modal__close" value="cancel" aria-label="关闭弹窗" type="submit"></button>
+        </div>
+        <div class="modal__body" id="modal-body"></div>
+        <div class="modal__footer" id="modal-footer"></div>
+      </form>
+    </dialog>
+
+    <dialog class="drawer" id="drawer" aria-labelledby="drawer-title">
+      <form method="dialog" class="drawer__surface">
+        <div class="modal__header">
+          <div><span class="eyebrow" id="drawer-eyebrow">详情</span><h2 id="drawer-title">详情</h2></div>
+          <button class="icon-button modal__close" value="cancel" aria-label="关闭详情" type="submit"></button>
+        </div>
+        <div class="drawer__body" id="drawer-body"></div>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>
