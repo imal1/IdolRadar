@@ -1,10 +1,14 @@
 package com.idolradar.db;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.idolradar.admin.AdminAuditRepository;
+import com.idolradar.admin.JdbcAdminAuditRepository;
+import com.idolradar.admin.JdbcAdminAuthRepository;
 import com.idolradar.seed.SeedProperties;
 import com.idolradar.seed.SeedService;
 import com.idolradar.worker.WorkerModels;
@@ -33,6 +37,7 @@ import org.postgresql.ds.PGSimpleDataSource;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -461,6 +466,44 @@ class PostgresMigrationSeedIT {
                 "SELECT approved_idol_id FROM idr_idol_request WHERE id = ?",
                 String.class,
                 requestId));
+    }
+
+    @Test
+    @Order(8)
+    void adminSessionRevocationAndAuditUseDedicatedTables() {
+        JdbcClient client = JdbcClient.create(testDataSource);
+        DataSourceTransactionManager transactionManager = new DataSourceTransactionManager(testDataSource);
+        JdbcAdminAuthRepository auth = new JdbcAdminAuthRepository(client, transactionManager);
+        JdbcAdminAuditRepository audit = new JdbcAdminAuditRepository(client);
+
+        UUID adminId = auth.createAdmin("ops-admin", "pbkdf2-sha256$210000$salt$hash-value");
+        String tokenHash = "b".repeat(64);
+        assertTrue(auth.createSession(adminId, tokenHash, Instant.now().plus(Duration.ofHours(1))));
+        assertTrue(auth.findSession(tokenHash).isPresent());
+
+        audit.record(new AdminAuditRepository.AuditEvent(
+                adminId,
+                "HTTP_POST",
+                "admin_route",
+                "/admin/v1/auth/logout",
+                "request-admin-1",
+                200,
+                true));
+        assertEquals(1L, jdbc.queryForObject(
+                "SELECT count(*) FROM idr_admin_audit_log WHERE admin_id = ?",
+                Long.class,
+                adminId));
+
+        assertTrue(auth.revokeAccess(adminId));
+        assertFalse(auth.findSession(tokenHash).isPresent());
+        assertEquals(Boolean.FALSE, jdbc.queryForObject(
+                "SELECT enabled FROM idr_admin_account WHERE id = ?",
+                Boolean.class,
+                adminId));
+        assertEquals(1L, jdbc.queryForObject(
+                "SELECT count(*) FROM idr_admin_session WHERE admin_id = ? AND revoked_at IS NOT NULL",
+                Long.class,
+                adminId));
     }
 
     private DatabaseCredentials databaseCredentials() {

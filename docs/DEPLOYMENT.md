@@ -155,6 +155,25 @@ curl https://你的域名/readyz
 微信公众平台必须把 `https://你的域名` 加入 `request` 合法域名；小程序
 `miniprogram/config/env.js` 的 `apiBaseUrl` 使用相同 HTTPS origin。
 
+### 5.1 首次创建管理员
+
+迁移完成且 PostgreSQL 已启动后，使用一次性命令创建管理员。密码只通过当前 Shell
+环境传给容器，数据库仅保存 PBKDF2 强哈希：
+
+```bash
+read -rsp "Admin password: " IDOLRADAR_ADMIN_PASSWORD
+export IDOLRADAR_ADMIN_PASSWORD
+docker compose run --rm --no-deps \
+  -e APP_MODE=admin-bootstrap \
+  -e IDOLRADAR_ADMIN_USERNAME=admin \
+  -e IDOLRADAR_ADMIN_PASSWORD \
+  app
+unset IDOLRADAR_ADMIN_PASSWORD
+```
+
+密码长度必须为 12–256 个字符。用户名仅允许 3–64 位字母、数字、点、下划线和连字符。
+不要把管理员密码写入 `.env`、Compose 或代码库。相同用户名不会被静默覆盖。
+
 ## 6. 数据与定时 Worker
 
 Flyway SQL 位于 `backend/src/main/resources/db/migration/`。已执行 migration 永不修改；

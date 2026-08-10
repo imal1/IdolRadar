@@ -35,6 +35,10 @@ public class SecurityHeadersFilter extends OncePerRequestFilter {
             response.setHeader("X-Frame-Options", "DENY");
             response.setHeader("Referrer-Policy", "no-referrer");
             response.setHeader("Cache-Control", "no-store");
+            // 管理页图表需要动态内联样式；脚本仍严格限制为同源文件，禁止内联执行。
+            response.setHeader("Content-Security-Policy", "default-src 'none'; script-src 'self'; "
+                    + "style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; "
+                    + "base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
             filterChain.doFilter(request, response);
         } finally {
             // servlet 线程会复用；清理 MDC，避免 request ID 泄漏到其他请求日志。
