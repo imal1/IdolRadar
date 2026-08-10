@@ -3,6 +3,9 @@ app:
   mode: ${APP_MODE:api}
 
 idolradar:
+  admin:
+    # 管理员会话短于小程序会话；生产环境可通过 IDOLRADAR_ADMIN_SESSION_TTL 覆盖。
+    session-ttl: ${IDOLRADAR_ADMIN_SESSION_TTL:12h}
   wechat:
     # AppID 不是密钥；AppSecret 只允许通过环境变量 IDOLRADAR_WECHAT_APP_SECRET 注入。
     app-id: ${IDOLRADAR_WECHAT_APP_ID:wxa04d57df55d8473d}

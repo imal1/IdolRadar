@@ -2,6 +2,8 @@ package com.idolradar.config;
 
 import java.util.List;
 
+import com.idolradar.admin.AdminAuditInterceptor;
+import com.idolradar.admin.AdminAuthInterceptor;
 import com.idolradar.auth.AuthInterceptor;
 import com.idolradar.web.PreAuthRateLimitInterceptor;
 import com.idolradar.web.RateLimitInterceptor;
@@ -23,14 +25,20 @@ public class WebMvcConfiguration implements WebMvcConfigurer {
             "/v1/me/subscriptions");
 
     private final AuthInterceptor authInterceptor;
+    private final AdminAuthInterceptor adminAuthInterceptor;
+    private final AdminAuditInterceptor adminAuditInterceptor;
     private final PreAuthRateLimitInterceptor preAuthRateLimitInterceptor;
     private final RateLimitInterceptor rateLimitInterceptor;
 
     public WebMvcConfiguration(
             AuthInterceptor authInterceptor,
+            AdminAuthInterceptor adminAuthInterceptor,
+            AdminAuditInterceptor adminAuditInterceptor,
             PreAuthRateLimitInterceptor preAuthRateLimitInterceptor,
             RateLimitInterceptor rateLimitInterceptor) {
         this.authInterceptor = authInterceptor;
+        this.adminAuthInterceptor = adminAuthInterceptor;
+        this.adminAuditInterceptor = adminAuditInterceptor;
         this.preAuthRateLimitInterceptor = preAuthRateLimitInterceptor;
         this.rateLimitInterceptor = rateLimitInterceptor;
     }
@@ -47,12 +55,22 @@ public class WebMvcConfiguration implements WebMvcConfigurer {
         registry.addInterceptor(preAuthRateLimitInterceptor)
                 .addPathPatterns("/v1/auth/wechat/login")
                 .addPathPatterns(PROTECTED_ENDPOINTS)
+                .addPathPatterns("/admin/v1/**")
                 .order(0);
         registry.addInterceptor(authInterceptor)
                 .addPathPatterns(PROTECTED_ENDPOINTS)
                 .order(1);
         registry.addInterceptor(rateLimitInterceptor)
                 .addPathPatterns(PROTECTED_ENDPOINTS)
+                .order(2);
+        // 管理员 token 使用独立会话表；登录外的全部管理路由统一鉴权并审计写操作。
+        registry.addInterceptor(adminAuthInterceptor)
+                .addPathPatterns("/admin/v1/**")
+                .excludePathPatterns("/admin/v1/auth/login")
+                .order(1);
+        registry.addInterceptor(adminAuditInterceptor)
+                .addPathPatterns("/admin/v1/**")
+                .excludePathPatterns("/admin/v1/auth/login")
                 .order(2);
     }
 }

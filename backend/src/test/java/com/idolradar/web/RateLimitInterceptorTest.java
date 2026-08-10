@@ -36,6 +36,22 @@ class RateLimitInterceptorTest {
     }
 
     @Test
+    void adminLoginUsesIsolatedIpScope() {
+        AtomicReference<Call> captured = new AtomicReference<>();
+        DistributedRateLimiter limiter = (scope, subject, limit, window) -> {
+            captured.set(new Call(scope, subject, limit, window));
+            return true;
+        };
+        PreAuthRateLimitInterceptor interceptor = new PreAuthRateLimitInterceptor(
+                limiter, new RateLimitProperties(120, 20, 12, 1_200, Duration.ofMinutes(1)));
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/admin/v1/auth/login");
+        request.setRemoteAddr("192.0.2.2");
+
+        assertTrue(interceptor.preHandle(request, new MockHttpServletResponse(), new Object()));
+        assertEquals(new Call("admin-login-ip", "192.0.2.2", 20, Duration.ofMinutes(1)), captured.get());
+    }
+
+    @Test
     void rejectedRequestReturnsStableErrorCode() {
         DistributedRateLimiter limiter = (scope, subject, limit, window) -> false;
         RateLimitInterceptor interceptor = new RateLimitInterceptor(

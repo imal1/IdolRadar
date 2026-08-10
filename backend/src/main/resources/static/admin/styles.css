@@ -1,3 +1,4 @@
+/* IdolRadar 管理端同源静态页面样式。 */
 :root {
   color-scheme: light;
   --bg: #faf6f3;
@@ -89,6 +90,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .check { display: inline-flex; align-items: center; gap: 7px; }
 .check input { width: 15px; height: 15px; accent-color: var(--rose-600); }
 .prototype-note { text-align: center; font-size: 12px !important; margin: 14px 0 0 !important; color: var(--muted-2) !important; }
+.prototype-note.is-error { color: var(--red) !important; }
 
 .button { min-height: 38px; border: 1px solid var(--rose-200); border-radius: 11px; padding: 0 16px; background: white; color: var(--rose-600); font-size: 13px; font-weight: 700; transition: transform .15s, box-shadow .15s, background .15s; }
 .button:hover { background: var(--rose-50); }

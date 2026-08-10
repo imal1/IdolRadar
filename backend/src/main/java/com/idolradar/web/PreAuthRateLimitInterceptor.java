@@ -23,12 +23,14 @@ public class PreAuthRateLimitInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
-        boolean login = "/v1/auth/wechat/login".equals(request.getRequestURI());
+        String path = request.getRequestURI();
+        boolean adminLogin = "/admin/v1/auth/login".equals(path);
+        boolean login = adminLogin || "/v1/auth/wechat/login".equals(path);
         int maximum = login ? properties.loginLimit() : properties.ipLimit();
         // 使用容器解析出的对端地址；可信代理处理在服务器边界配置。
         String remoteAddress = request.getRemoteAddr();
         String subject = remoteAddress == null || remoteAddress.isBlank() ? "unknown" : remoteAddress;
-        String scope = login ? "login-ip" : "api-ip";
+        String scope = adminLogin ? "admin-login-ip" : login ? "login-ip" : "api-ip";
         if (!rateLimiter.allow(scope, subject, maximum, properties.window())) {
             throw new AppException(HttpStatus.TOO_MANY_REQUESTS, "RATE_LIMITED", "请求太频繁，请稍后再试");
         }

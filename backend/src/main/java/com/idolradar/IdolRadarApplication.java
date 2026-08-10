@@ -5,6 +5,7 @@ import java.util.concurrent.CountDownLatch;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.idolradar.admin.AdminAuthService;
 import com.idolradar.seed.SeedService;
 import com.idolradar.worker.WorkerModels;
 import com.idolradar.worker.WorkerProperties;
@@ -60,6 +61,12 @@ public class IdolRadarApplication {
             if ("seed".equals(mode)) {
                 SeedService.SeedResult result = context.getBean(SeedService.class).seed();
                 printJson(context, Map.of("event", "seed_completed", "result", result));
+            } else if ("admin-bootstrap".equals(mode)) {
+                AdminAuthService.BootstrapResult result = context.getBean(AdminAuthService.class).bootstrap(
+                        requiredEnvironment("IDOLRADAR_ADMIN_USERNAME"),
+                        requiredEnvironment("IDOLRADAR_ADMIN_PASSWORD"));
+                // 输出只包含内部 ID 与用户名；密码及其哈希都不得进入日志。
+                printJson(context, Map.of("event", "admin_bootstrap_completed", "result", result));
             } else if ("worker".equals(mode)) {
                 WorkerModels.WorkerRunResult result = context.getBean(WorkerService.class).runOnce();
                 printJson(context, Map.of("event", "worker_completed", "result", result));
@@ -106,9 +113,18 @@ public class IdolRadarApplication {
                 mode = argument.substring("--app.mode=".length()).trim().toLowerCase();
             }
         }
-        if (!java.util.Set.of("api", "migrate", "seed", "worker").contains(mode)) {
-            throw new IllegalArgumentException("APP_MODE must be api, migrate, seed, or worker");
+        if (!java.util.Set.of("api", "migrate", "seed", "admin-bootstrap", "worker").contains(mode)) {
+            throw new IllegalArgumentException(
+                    "APP_MODE must be api, migrate, seed, admin-bootstrap, or worker");
         }
         return mode;
+    }
+
+    private static String requiredEnvironment(String name) {
+        String value = System.getenv(name);
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(name + " is required");
+        }
+        return value;
     }
 }

@@ -1,5 +1,7 @@
 "use strict";
 
+// 身份功能连接真实 API；其余业务页随对应 Issue 逐步替换演示数据。
+
 const icons = {
   dashboard: '<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>',
   idols: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m19 8 1 2 2 .5-1.5 1.6.3 2.2-1.8-.9-1.8.9.3-2.2L16 10.5l2-.5z"/>',
@@ -91,6 +93,7 @@ const state = {
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const number = (value) => new Intl.NumberFormat("zh-CN").format(value);
+const ADMIN_TOKEN_KEY = "idolradar.admin.token";
 
 function statusBadge(status) {
   const map = {
@@ -477,28 +480,107 @@ function toggleAccountMenu() {
   document.body.append(menu);
 }
 
-function login() {
-  sessionStorage.setItem("idolradar-admin-prototype", "authenticated");
+function showApplication(admin) {
   $("#login-screen").classList.add("is-hidden");
   $("#app-shell").classList.remove("is-hidden");
+  $$('[data-admin-name]').forEach((element) => { element.textContent = admin.username; });
   const hashPage = location.hash.slice(1);
   state.page = renderers[hashPage] ? hashPage : "dashboard";
   renderPage();
 }
 
-function logout() {
-  sessionStorage.removeItem("idolradar-admin-prototype");
+function showLogin(message = "", error = false) {
   $("#app-shell").classList.add("is-hidden");
   $("#login-screen").classList.remove("is-hidden");
+  const status = $("#login-message");
+  status.textContent = message;
+  status.classList.toggle("is-error", error);
   history.replaceState(null, "", location.pathname);
 }
 
-function initialize() {
+async function adminRequest(path, options = {}) {
+  const token = sessionStorage.getItem(ADMIN_TOKEN_KEY);
+  const response = await fetch(path, {
+    ...options,
+    headers: {
+      Accept: "application/json",
+      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...options.headers,
+    },
+  });
+  const body = await response.json().catch(() => null);
+  if (response.status === 401) {
+    // 401 统一清理管理员 token；禁止继续展示缓存的管理数据。
+    sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+    showLogin("登录已失效，请重新登录。", true);
+  }
+  if (!response.ok || !body?.ok) {
+    throw new Error(body?.error?.message || "管理后台暂时不可用");
+  }
+  return body.data;
+}
+
+async function login() {
+  const form = $("#login-form");
+  const button = $('button[type="submit"]', form);
+  const status = $("#login-message");
+  button.disabled = true;
+  status.textContent = "正在验证…";
+  status.classList.remove("is-error");
+  try {
+    const response = await fetch("/admin/v1/auth/login", {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: $("#login-account").value.trim(),
+        password: $("#login-password").value,
+      }),
+    });
+    const body = await response.json().catch(() => null);
+    if (!response.ok || !body?.ok) {
+      throw new Error(body?.error?.message || "登录失败");
+    }
+    // sessionStorage 限制 token 生命周期到当前标签页；不使用长期 localStorage。
+    sessionStorage.setItem(ADMIN_TOKEN_KEY, body.data.token);
+    $("#login-password").value = "";
+    showApplication(body.data.admin);
+  } catch (error) {
+    status.textContent = error instanceof Error ? error.message : "登录失败";
+    status.classList.add("is-error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function logout() {
+  try {
+    await adminRequest("/admin/v1/auth/logout", { method: "POST" });
+  } catch (error) {
+    // 即使网络失败也删除本地 token；服务端会话仍受短 TTL 限制，可由其他管理员吊销。
+  } finally {
+    sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+    showLogin("已退出登录。", false);
+  }
+}
+
+async function restoreSession() {
+  if (!sessionStorage.getItem(ADMIN_TOKEN_KEY)) return;
+  try {
+    showApplication(await adminRequest("/admin/v1/me"));
+  } catch (error) {
+    if (sessionStorage.getItem(ADMIN_TOKEN_KEY)) {
+      showLogin(error instanceof Error ? error.message : "管理后台暂时不可用", true);
+    }
+  }
+}
+
+async function initialize() {
   $("#toggle-password").innerHTML = icon("eye");
   $("#mobile-menu").innerHTML = icon("menu");
   $(".notification-button").innerHTML = icon("bell");
   $("#update-time").textContent = "数据更新于 11:20";
-  $("#login-form").addEventListener("submit", (event) => { event.preventDefault(); login(); });
+  $("#login-form").addEventListener("submit", (event) => { event.preventDefault(); void login(); });
   $("#toggle-password").addEventListener("click", () => {
     const input = $("#login-password");
     const visible = input.type === "text";
@@ -524,7 +606,7 @@ function initialize() {
     const page = location.hash.slice(1);
     if (renderers[page] && page !== state.page) navigate(page);
   });
-  if (sessionStorage.getItem("idolradar-admin-prototype") === "authenticated") login();
+  await restoreSession();
 }
 
-initialize();
+void initialize();
