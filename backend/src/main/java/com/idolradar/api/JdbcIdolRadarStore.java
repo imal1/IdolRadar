@@ -3,6 +3,7 @@ package com.idolradar.api;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
@@ -61,14 +62,15 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
                 .param("idolId", user.idolId())
                 .query(Integer.class)
                 .single();
+        DayWindow today = shanghaiDayWindow(Instant.now());
         int todayPosts = jdbc.sql(
                         "SELECT COUNT(*)::integer FROM idr_post "
-                                + "WHERE idol_id = :idolId AND published_at >= :startOfDay")
+                                + "WHERE idol_id = :idolId "
+                                + "AND published_at >= :startOfDay AND published_at < :startOfNextDay")
                 .param("idolId", user.idolId())
-                // 产品指标中的“今日”按中国标准时间计算，不受服务器时区影响。
-                .param("startOfDay", OffsetDateTime.ofInstant(
-                        java.time.LocalDate.now(SHANGHAI).atStartOfDay(SHANGHAI).toInstant(),
-                        ZoneOffset.UTC))
+                // “今日”使用上海自然日闭开区间，既不受服务器时区影响，也不误计上游未来时间。
+                .param("startOfDay", today.startInclusive())
+                .param("startOfNextDay", today.endExclusive())
                 .query(Integer.class)
                 .single();
         FeedPage feed = queryFeedPage(user.idolId(), null);
@@ -76,6 +78,7 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
         Map<String, Object> stats = new LinkedHashMap<>();
         stats.put("todayPosts", todayPosts);
         stats.put("sourceCount", sourceCount);
+        // 产品已决议信号强度仅为状态文案，不代表来源健康率或预测概率。
         stats.put("signalStrength", sourceCount > 0 ? "满格" : "无信号");
         stats.put("latestUpdateAt", feed.posts().isEmpty() ? null : feed.posts().getFirst().get("publishedAt"));
 
@@ -353,6 +356,14 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
         return value == null ? null : value.toString();
     }
 
+    /** 返回指定时刻所属的上海自然日边界，供首页“今日动态”统计使用。 */
+    static DayWindow shanghaiDayWindow(Instant now) {
+        LocalDate today = now.atZone(SHANGHAI).toLocalDate();
+        return new DayWindow(
+                OffsetDateTime.ofInstant(today.atStartOfDay(SHANGHAI).toInstant(), ZoneOffset.UTC),
+                OffsetDateTime.ofInstant(today.plusDays(1).atStartOfDay(SHANGHAI).toInstant(), ZoneOffset.UTC));
+    }
+
     private static void validateId(String value, String fieldName) {
         if (value == null || value.isBlank() || value.length() > MAX_ID_LENGTH || hasControlCharacter(value)) {
             throw new AppException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", fieldName + "无效");
@@ -391,5 +402,8 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
     }
 
     private record FeedPage(List<Map<String, Object>> posts, boolean hasMore, String nextCursor) {
+    }
+
+    record DayWindow(OffsetDateTime startInclusive, OffsetDateTime endExclusive) {
     }
 }
