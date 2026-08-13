@@ -16,6 +16,8 @@ graphify-out/
 docs/IdolRadar-Docker统一部署流程.md
 node_modules/
 **/node_modules/
+# 管理端前端产物由 packages/admin-web 构建生成，只进镜像不进仓库。
+/backend/src/main/resources/static/admin/
 .pnpm-store/
 **/target/
 /backend/maven-settings.xml

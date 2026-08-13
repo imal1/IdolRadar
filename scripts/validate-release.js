@@ -162,6 +162,13 @@ const requiredFiles = [
   'docs/RSSHUB-DEVELOPMENT.md',
   'packages/test-utils/package.json',
   'packages/test-utils/index.js',
+  'packages/admin-web/package.json',
+  'packages/admin-web/vite.config.ts',
+  'packages/admin-web/index.html',
+  'packages/admin-web/src/main.ts',
+  // 管理端产物不进仓库：这一条要求发布前先构建 packages/admin-web，
+  // 否则 backend 镜像里的 /admin/ 会是 404，而后端接口全部正常，故障很难第一时间定位。
+  'backend/src/main/resources/static/admin/index.html',
   'tests/miniprogram-e2e/package.json',
   'tests/miniprogram-e2e/vitest.config.js',
   'tests/miniprogram-e2e/smoke.e2e.vitest.js',
