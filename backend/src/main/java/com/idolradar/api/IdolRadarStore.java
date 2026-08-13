@@ -15,4 +15,8 @@ public interface IdolRadarStore {
     Map<String, Object> setIdol(String openId, String idolId);
 
     Map<String, Object> recordSubscription(String openId, boolean accepted, String templateId);
+
+    Map<String, Object> submitIdolRequest(String openId, String displayName, String note);
+
+    Map<String, Object> listMyIdolRequests(String openId);
 }

@@ -8,7 +8,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.idolradar.admin.AdminAuditRepository;
 import com.idolradar.admin.JdbcAdminAuditRepository;
+import com.idolradar.admin.AdminCatalogStore;
 import com.idolradar.admin.JdbcAdminAuthRepository;
+import com.idolradar.api.AppException;
+import com.idolradar.api.CursorCodec;
+import com.idolradar.api.JdbcIdolRadarStore;
 import com.idolradar.seed.SeedProperties;
 import com.idolradar.seed.SeedService;
 import com.idolradar.worker.WorkerModels;
@@ -19,6 +23,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
@@ -504,6 +509,44 @@ class PostgresMigrationSeedIT {
                 "SELECT count(*) FROM idr_admin_session WHERE admin_id = ? AND revoked_at IS NOT NULL",
                 Long.class,
                 adminId));
+    }
+
+    @Test
+    @Order(9)
+    void disablingIdolKeepsExistingGuardsButStopsCatalogAndFetching() {
+        jdbc.update("INSERT INTO idr_idol (id, name) VALUES ('idol-1', '示例')");
+        jdbc.update("INSERT INTO idr_source (id, idol_id, rss_url, display_name) "
+                + "VALUES ('source-1', 'idol-1', 'https://example.com/feed.xml', '示例源')");
+        UUID userId = jdbc.queryForObject(
+                "INSERT INTO idr_user (openid, idol_id, guarding_since) "
+                        + "VALUES ('openid-1', 'idol-1', now()) RETURNING id",
+                UUID.class);
+        jdbc.update("INSERT INTO idr_user_guard (user_id, idol_id, guarding_since) VALUES (?, 'idol-1', now())",
+                userId);
+
+        JdbcClient client = JdbcClient.create(testDataSource);
+        AdminCatalogStore admin = new AdminCatalogStore(client);
+        JdbcIdolRadarStore api = new JdbcIdolRadarStore(client, new CursorCodec());
+        WorkerStore worker = new WorkerStore(
+                jdbc,
+                new TransactionTemplate(new DataSourceTransactionManager(testDataSource)));
+
+        admin.updateIdol("idol-1", null, null, null, false, 1);
+
+        // 停用只影响“新增”：候选名单与抓取立刻停止，已存在的守护关系一律保留，
+        // 否则管理员一次停用就会静默清空用户的守护历史。
+        assertEquals(1L, jdbc.queryForObject(
+                "SELECT count(*) FROM idr_user_guard WHERE user_id = ? AND idol_id = 'idol-1'",
+                Long.class,
+                userId));
+        assertTrue(worker.loadEnabledSources().isEmpty());
+
+        Map<String, Object> catalog = api.listIdols("openid-1");
+        assertTrue(((List<?>) catalog.get("idols")).isEmpty());
+        assertEquals("idol-1", catalog.get("currentIdolId"));
+        AppException rejected = assertThrows(
+                AppException.class, () -> api.setIdol("openid-1", "idol-1"));
+        assertEquals("IDOL_NOT_FOUND", rejected.code());
     }
 
     private DatabaseCredentials databaseCredentials() {

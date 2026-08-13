@@ -36,6 +36,12 @@ public class ApiExceptionHandler {
         return ResponseEntity.badRequest().body(ApiResponse.error("INVALID_INPUT", "请求参数无效"));
     }
 
+    /** 管理端创建/修改源时校验抓取地址失败：错误码本身就是给管理员看的诊断结论。 */
+    @ExceptionHandler(com.idolradar.worker.FeedException.class)
+    ResponseEntity<ApiResponse<Void>> invalidFeedUrl(com.idolradar.worker.FeedException error) {
+        return ResponseEntity.badRequest().body(ApiResponse.error(error.code(), error.getMessage()));
+    }
+
     @ExceptionHandler(NoResourceFoundException.class)
     ResponseEntity<ApiResponse<Void>> notFound(NoResourceFoundException error) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)

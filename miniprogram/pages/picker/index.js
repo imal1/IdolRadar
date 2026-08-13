@@ -30,6 +30,9 @@ function confirmSwitch(name) {
   });
 }
 
+var REQUEST_NAME_MAX_LENGTH = 64;
+var REQUEST_STATUS_LABELS = { pending: '审核中', approved: '已上线', rejected: '未通过' };
+
 Page({
   data: {
     loading: true,
@@ -39,12 +42,15 @@ Page({
     filteredIdols: [],
     currentIdolId: '',
     confirmingId: '',
-    selectingId: ''
+    selectingId: '',
+    myRequests: [],
+    submittingRequest: false
   },
 
   onLoad: function () {
     theme.watchPage(this);
     this.loadData();
+    this.loadMyRequests();
   },
 
   onUnload: function () {
@@ -86,6 +92,64 @@ Page({
 
   retry: function () {
     this.loadData();
+    this.loadMyRequests();
+  },
+
+  // 申请状态是次要信息：读取失败只留空，不打断选人主流程。
+  loadMyRequests: function () {
+    var page = this;
+    return api.callUser('listMyIdolRequests').then(function (data) {
+      var requests = (data && data.requests) || [];
+      page.setData({
+        myRequests: requests.map(function (request) {
+          return Object.assign({}, request, {
+            statusLabel: REQUEST_STATUS_LABELS[request.status] || request.status
+          });
+        })
+      });
+    }).catch(function () {
+      page.setData({ myRequests: [] });
+    });
+  },
+
+  submitRequest: function () {
+    var page = this;
+    if (this.data.submittingRequest) {
+      return;
+    }
+    wx.showModal({
+      title: '申请新增 idol',
+      editable: true,
+      placeholderText: '输入想守护的名字',
+      content: this.data.query || '',
+      confirmText: '提交申请',
+      confirmColor: '#c4526e',
+      success: function (result) {
+        if (!result.confirm) {
+          return;
+        }
+        var name = String(result.content || '').trim();
+        if (!name) {
+          wx.showToast({ title: '请先填写名字', icon: 'none' });
+          return;
+        }
+        // 服务端同样限制长度；这里提前拦下，省一次注定失败的请求。
+        if (name.length > REQUEST_NAME_MAX_LENGTH) {
+          wx.showToast({ title: '名字最多 ' + REQUEST_NAME_MAX_LENGTH + ' 个字', icon: 'none' });
+          return;
+        }
+        page.setData({ submittingRequest: true });
+        api.callUser('submitIdolRequest', { name: name }).then(function (data) {
+          page.setData({ submittingRequest: false });
+          var supporters = (data && data.supporterCount) || 1;
+          wx.showToast({ title: '已收到，' + supporters + ' 人在等她', icon: 'none' });
+          page.loadMyRequests();
+        }).catch(function (error) {
+          page.setData({ submittingRequest: false });
+          wx.showToast({ title: error.message || '提交失败，请稍后重试', icon: 'none' });
+        });
+      }
+    });
   },
 
   search: function (event) {

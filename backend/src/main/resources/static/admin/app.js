@@ -1,6 +1,6 @@
 "use strict";
 
-// 身份功能连接真实 API；其余业务页随对应 Issue 逐步替换演示数据。
+// 身份、idol、动态源、申请审核连接真实 API；推送投递与审计日志仍为演示数据，随对应 Issue 替换。
 
 const icons = {
   dashboard: '<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>',
@@ -39,7 +39,7 @@ const pageMeta = {
   idols: { label: "idol 管理", icon: "idols" },
   sources: { label: "动态源", icon: "sources" },
   deliveries: { label: "推送投递", icon: "deliveries" },
-  requests: { label: "申请审核", icon: "requests", badge: 3 },
+  requests: { label: "申请审核", icon: "requests", badge: 0 },
   audit: { label: "审计日志", icon: "audit" },
 };
 
@@ -50,21 +50,11 @@ const state = {
   sourceStatus: "all",
   idolStatus: "all",
   auditResult: "all",
-  idols: [
-    { id: 1, name: "王一博", initial: "博", bio: "演员、歌手、职业赛车手", status: "enabled", sources: 3, posts: 1286, guards: 8421, version: 6, updatedAt: "今天 10:48" },
-    { id: 2, name: "赵露思", initial: "露", bio: "演员", status: "enabled", sources: 2, posts: 938, guards: 6280, version: 4, updatedAt: "昨天 18:20" },
-    { id: 3, name: "檀健次", initial: "檀", bio: "演员、歌手", status: "enabled", sources: 2, posts: 764, guards: 5112, version: 3, updatedAt: "8月7日 16:42" },
-    { id: 4, name: "刘宇宁", initial: "宁", bio: "歌手、演员", status: "disabled", sources: 1, posts: 486, guards: 3210, version: 2, updatedAt: "8月6日 09:31" },
-    { id: 5, name: "白鹿", initial: "鹿", bio: "演员", status: "enabled", sources: 2, posts: 621, guards: 4627, version: 3, updatedAt: "8月5日 20:16" },
-  ],
-  sources: [
-    { id: 11, idol: "王一博", name: "王一博 · 微博", channel: "微博", url: "https://rss.example.com/weibo/user/5492443184", status: "healthy", enabled: true, lastFetch: "1 分钟前", lastSuccess: "1 分钟前", parsed: 20, added: 1, failures: 0 },
-    { id: 12, idol: "王一博", name: "王一博工作室 · 微博", channel: "微博", url: "https://rss.example.com/weibo/user/6525010965", status: "healthy", enabled: true, lastFetch: "2 分钟前", lastSuccess: "2 分钟前", parsed: 20, added: 0, failures: 0 },
-    { id: 13, idol: "王一博", name: "王一博后援会 · 微博", channel: "微博", url: "https://rss.example.com/weibo/user/guard-club", status: "failed", enabled: true, lastFetch: "8 分钟前", lastSuccess: "2 小时前", parsed: 0, added: 0, failures: 3 },
-    { id: 14, idol: "赵露思", name: "赵露思 · 微博", channel: "微博", url: "https://rss.example.com/weibo/user/rosy-zhao", status: "healthy", enabled: true, lastFetch: "6 分钟前", lastSuccess: "6 分钟前", parsed: 20, added: 2, failures: 0 },
-    { id: 15, idol: "檀健次", name: "檀健次工作室 · 微博", channel: "微博", url: "https://rss.example.com/weibo/user/tjc-studio", status: "waiting", enabled: true, lastFetch: "尚未抓取", lastSuccess: "—", parsed: 0, added: 0, failures: 0 },
-    { id: 16, idol: "刘宇宁", name: "刘宇宁 · 微博", channel: "微博", url: "https://rss.example.com/weibo/user/lyn", status: "disabled", enabled: false, lastFetch: "2 天前", lastSuccess: "2 天前", parsed: 20, added: 1, failures: 0 },
-  ],
+  idols: [],
+  sources: [],
+  sourceSummary: {},
+  requests: [],
+  pendingCount: 0,
   deliveries: [
     { id: "DLV-20260809-0186", user: "用户 #1028", idol: "王一博", post: "WB-882901", status: "success", retries: 0, sentAt: "今天 11:18:08", openedAt: "今天 11:24:36", reason: "—" },
     { id: "DLV-20260809-0185", user: "用户 #0932", idol: "赵露思", post: "WB-882896", status: "success", retries: 0, sentAt: "今天 11:16:42", openedAt: "—", reason: "—" },
@@ -72,13 +62,6 @@ const state = {
     { id: "DLV-20260809-0183", user: "用户 #0841", idol: "白鹿", post: "WB-882877", status: "failed", retries: 3, sentAt: "今天 11:12:25", openedAt: "—", reason: "用户拒绝接收该模板消息" },
     { id: "DLV-20260809-0182", user: "用户 #0738", idol: "檀健次", post: "WB-882865", status: "queued", retries: 0, sentAt: "—", openedAt: "—", reason: "等待投递" },
     { id: "DLV-20260809-0181", user: "用户 #0665", idol: "王一博", post: "WB-882852", status: "success", retries: 1, sentAt: "今天 11:03:16", openedAt: "今天 11:08:05", reason: "—" },
-  ],
-  requests: [
-    { id: 201, name: "赵露思", support: 328, requester: "用户 #1182", note: "希望增加微博和工作室两个动态源。", status: "pending", createdAt: "今天 09:42" },
-    { id: 202, name: "檀健次", support: 214, requester: "用户 #0971", note: "新剧宣传期动态很多，希望能及时提醒。", status: "pending", createdAt: "昨天 20:16" },
-    { id: 203, name: "刘宇宁", support: 176, requester: "用户 #0744", note: "建议接入个人微博和工作室微博。", status: "pending", createdAt: "昨天 15:30" },
-    { id: 204, name: "白鹿", support: 142, requester: "用户 #0615", note: "", status: "approved", createdAt: "8月7日 11:28" },
-    { id: 205, name: "虞书欣", support: 96, requester: "用户 #0538", note: "同名申请已合并。", status: "rejected", createdAt: "8月6日 08:55" },
   ],
   audits: [
     { id: "AUD-00816", operator: "管理员", action: "UPDATE_SOURCE", resource: "idr_source#13", result: "success", requestId: "req-3a9f71", summary: "更新来源 RSS 地址", time: "今天 11:06:22", before: '{"rss_url":"https://old.example.com/route"}', after: '{"rss_url":"https://rss.example.com/weibo/user/guard-club"}' },
@@ -95,9 +78,21 @@ const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const number = (value) => new Intl.NumberFormat("zh-CN").format(value);
 const ADMIN_TOKEN_KEY = "idolradar.admin.token";
 
+// 时间一律由服务端以 ISO 返回，展示层再本地化；相对时间让「多久没成功」一眼可读。
+function timeText(value) {
+  if (!value) return "—";
+  const time = new Date(value).getTime();
+  if (Number.isNaN(time)) return "—";
+  const elapsed = Date.now() - time;
+  if (elapsed < 60_000) return "刚刚";
+  if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)} 分钟前`;
+  if (elapsed < 86_400_000) return `${Math.floor(elapsed / 3_600_000)} 小时前`;
+  return new Date(time).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
 function statusBadge(status) {
   const map = {
-    enabled: ["启用", "badge--success"], disabled: ["停用", "badge--neutral"], healthy: ["正常", "badge--success"], waiting: ["待抓取", "badge--violet"],
+    enabled: ["启用", "badge--success"], disabled: ["停用", "badge--neutral"], healthy: ["正常", "badge--success"], waiting: ["待抓取", "badge--violet"], stale: ["长期未成功", "badge--warning"],
     success: ["成功", "badge--success"], failed: ["失败", "badge--warning"], retry: ["重试中", "badge--warning"], queued: ["待发送", "badge--violet"], pending: ["待审核", "badge--warning"], approved: ["已通过", "badge--success"], rejected: ["已驳回", "badge--neutral"],
   };
   const [label, className] = map[status] || [status, "badge--neutral"];
@@ -156,8 +151,8 @@ function dashboardPage() {
       <article class="card">
         <div class="card__header"><div><h3>抓取源健康</h3><p>最新一次抓取结果</p></div><button class="text-button" data-page-jump="sources" type="button">查看全部 ›</button></div>
         <div class="card__body">
-          <div class="health-summary"><div class="summary-chip">正常<strong>12</strong></div><div class="summary-chip is-warning">异常<strong>2</strong></div><div class="summary-chip is-muted">待抓取<strong>1</strong></div></div>
-          <ul class="health-list"><li><span>王一博 · 微博</span><span class="status status--success">正常</span></li><li><span>王一博工作室 · 微博</span><span class="status status--success">正常</span></li><li><span>王一博后援会 · 微博</span><span class="status status--danger">连续失败 3 次</span></li><li><span>檀健次工作室 · 微博</span><span class="status status--muted">待首次抓取</span></li></ul>
+          <div class="health-summary"><div class="summary-chip">正常<strong>${state.sourceSummary.healthy ?? 0}</strong></div><div class="summary-chip is-warning">异常<strong>${(state.sourceSummary.failed ?? 0) + (state.sourceSummary.stale ?? 0)}</strong></div><div class="summary-chip is-muted">待抓取<strong>${state.sourceSummary.waiting ?? 0}</strong></div></div>
+          <ul class="health-list">${state.sources.slice(0, 5).map((item) => `<li><span>${safe(item.displayName)}</span>${healthStatusText(item)}</li>`).join("") || '<li><span>暂无来源</span><span class="status status--muted">—</span></li>'}</ul>
         </div>
       </article>
     </section>
@@ -167,42 +162,51 @@ function dashboardPage() {
         <div class="card__body"><div class="delivery-summary"><div class="donut"><div class="donut__label"><strong>96.2%</strong><span>成功率</span></div></div><div class="bar-list"><div class="bar-row"><span>成功</span><span class="bar-track"><span style="width:96.2%"></span></span><strong>1,286</strong></div><div class="bar-row"><span>重试</span><span class="bar-track"><span style="width:18%;background:#d88727"></span></span><strong>18</strong></div><div class="bar-row"><span>失败</span><span class="bar-track"><span style="width:12%;background:#c4526e"></span></span><strong>12</strong></div></div></div><div class="queue-foot"><span>待发队列</span><strong>24</strong></div></div>
       </article>
       <article class="card">
-        <div class="card__header"><div><h3>idol 申请队列 <span class="badge badge--warning">待处理 3</span></h3><p>按支持人数排序</p></div><button class="text-button" data-page-jump="requests" type="button">查看全部 ›</button></div>
-        <div class="card__body"><ul class="request-list">${state.requests.filter((item) => item.status === "pending").map((item) => `<li><span>${safe(item.name)}</span><span>${number(item.support)} 人支持</span><button class="button button--small" data-page-jump="requests" type="button">去审核</button></li>`).join("")}</ul></div>
+        <div class="card__header"><div><h3>idol 申请队列 <span class="badge badge--warning">待处理 ${state.pendingCount}</span></h3><p>按支持人数排序</p></div><button class="text-button" data-page-jump="requests" type="button">查看全部 ›</button></div>
+        <div class="card__body"><ul class="request-list">${state.requests.filter((item) => item.status === "pending").slice(0, 5).map((item) => `<li><span>${safe(item.displayName)}</span><span>${number(item.supporterCount)} 人支持</span><button class="button button--small" data-page-jump="requests" type="button">去审核</button></li>`).join("") || '<li><span>暂无待处理申请</span></li>'}</ul></div>
       </article>
     </section>`;
 }
 
 function idolsPage() {
-  const filtered = state.idols.filter((item) => state.idolStatus === "all" || item.status === state.idolStatus);
+  const filtered = state.idols.filter((item) => state.idolStatus === "all" || item.enabled === (state.idolStatus === "enabled"));
   const rows = filtered.map((item) => `
-    <tr data-search="${safe(`${item.name} ${item.bio}`)}">
-      <td><div class="entity"><span class="entity__avatar">${safe(item.initial)}</span><span><strong>${safe(item.name)}</strong><small>${safe(item.bio)}</small></span></div></td>
-      <td>${statusBadge(item.status)}</td><td>${item.sources}</td><td>${number(item.posts)}</td><td>${number(item.guards)}</td><td>v${item.version}</td><td>${item.updatedAt}</td>
-      <td><div class="actions"><button class="button button--small" data-action="edit-idol" data-id="${item.id}" type="button">编辑</button><button class="switch ${item.status === "enabled" ? "is-on" : ""}" data-action="toggle-idol" data-id="${item.id}" type="button" aria-label="${item.status === "enabled" ? "停用" : "启用"}${safe(item.name)}"></button></div></td>
+    <tr data-search="${safe(`${item.id} ${item.name} ${item.bio || ""}`)}">
+      <td><div class="entity"><span class="entity__avatar">${safe(item.name.slice(0, 1))}</span><span><strong>${safe(item.name)}</strong><small>${safe(item.bio || item.id)}</small></span></div></td>
+      <td>${statusBadge(item.enabled ? "enabled" : "disabled")}</td><td>${item.sourceCount}</td><td>${number(item.guardCount)}</td><td>v${item.version}</td><td>${timeText(item.updatedAt)}</td>
+      <td><div class="actions"><button class="button button--small" data-action="edit-idol" data-id="${safe(item.id)}" type="button">编辑</button><button class="switch ${item.enabled ? "is-on" : ""}" data-action="toggle-idol" data-id="${safe(item.id)}" type="button" aria-label="${item.enabled ? "停用" : "启用"}${safe(item.name)}"></button></div></td>
     </tr>`).join("");
   return `
     ${pageHeading("idol 管理", "维护可守护对象；停用不会删除历史动态、守护或投递记录。", `<button class="button button--primary" data-action="add-idol" type="button">${icon("plus")} 新增 idol</button>`)}
     <section class="card data-card">
-      <div class="data-card__toolbar"><div class="toolbar">${searchField("idol-search", "搜索名称或简介")}<label class="field">状态 <select id="idol-status"><option value="all">全部</option><option value="enabled" ${state.idolStatus === "enabled" ? "selected" : ""}>启用</option><option value="disabled" ${state.idolStatus === "disabled" ? "selected" : ""}>停用</option></select></label></div><span class="result-count" id="idol-count">共 ${filtered.length} 位</span></div>
-      <div class="table-wrap"><table><thead><tr><th>idol</th><th>状态</th><th>动态源</th><th>动态数</th><th>守护人数</th><th>数据版本</th><th>最后更新</th><th>操作</th></tr></thead><tbody id="idol-table">${rows || '<tr><td colspan="8"><div class="empty">没有符合条件的 idol</div></td></tr>'}</tbody></table></div>${pagination()}
+      <div class="data-card__toolbar"><div class="toolbar">${searchField("idol-search", "搜索标识、名称或简介")}<label class="field">状态 <select id="idol-status"><option value="all">全部</option><option value="enabled" ${state.idolStatus === "enabled" ? "selected" : ""}>启用</option><option value="disabled" ${state.idolStatus === "disabled" ? "selected" : ""}>停用</option></select></label></div><span class="result-count" id="idol-count">共 ${filtered.length} 位</span></div>
+      <div class="table-wrap"><table><thead><tr><th>idol</th><th>状态</th><th>动态源</th><th>守护人数</th><th>数据版本</th><th>最后更新</th><th>操作</th></tr></thead><tbody id="idol-table">${rows || '<tr><td colspan="7"><div class="empty">没有符合条件的 idol</div></td></tr>'}</tbody></table></div>
     </section>`;
 }
 
+/** 看板首页只需一句结论：连续失败次数比状态词更能说明该不该现在去修。 */
+function healthStatusText(item) {
+  if (item.health === "failed") return `<span class="status status--danger">连续失败 ${item.consecutiveFailures} 次</span>`;
+  if (item.health === "stale") return '<span class="status status--danger">超过 24 小时未成功</span>';
+  if (item.health === "waiting") return '<span class="status status--muted">待首次抓取</span>';
+  if (item.health === "disabled") return '<span class="status status--muted">已停用</span>';
+  return '<span class="status status--success">正常</span>';
+}
+
 function sourcesPage() {
-  const filtered = state.sources.filter((item) => state.sourceStatus === "all" || item.status === state.sourceStatus);
-  const rows = filtered.map((item) => `
-    <tr data-search="${safe(`${item.idol} ${item.name} ${item.channel}`)}">
-      <td><div class="entity"><span class="entity__avatar">${safe(item.idol.slice(0, 1))}</span><span><strong>${safe(item.name)}</strong><small>${safe(item.idol)} · ${safe(item.channel)}</small></span></div></td>
-      <td><span class="url" title="${safe(item.url)}">${safe(item.url)}</span></td><td>${sourceStatusBadge(item.status)}</td><td>${safe(item.lastFetch)}</td><td>${safe(item.lastSuccess)}</td><td>${item.parsed} / ${item.added}</td><td>${item.failures ? `<span class="failure-count">${item.failures} 次</span>` : "0"}</td>
-      <td><div class="actions"><button class="button button--small" data-action="manual-fetch" data-id="${item.id}" type="button">抓取验证</button><button class="button button--small button--neutral" data-action="edit-source" data-id="${item.id}" type="button">编辑</button><button class="switch ${item.enabled ? "is-on" : ""}" data-action="toggle-source" data-id="${item.id}" type="button" aria-label="${item.enabled ? "停用" : "启用"}${safe(item.name)}"></button></div></td>
+  const summary = state.sourceSummary;
+  const rows = state.sources.map((item) => `
+    <tr data-search="${safe(`${item.idolName} ${item.displayName} ${item.channel}`)}">
+      <td><div class="entity"><span class="entity__avatar">${safe(item.idolName.slice(0, 1))}</span><span><strong>${safe(item.displayName)}</strong><small>${safe(item.idolName)} · ${safe(item.channel)}</small></span></div></td>
+      <td><span class="url" title="${safe(item.rssUrl)}">${safe(item.rssUrl)}</span></td><td>${sourceStatusBadge(item.health)}</td><td>${timeText(item.lastFetchAt)}</td><td>${timeText(item.lastSuccessAt)}</td><td>${item.lastFetchItemCount} / ${item.lastFetchNewCount}</td><td>${item.consecutiveFailures ? `<span class="failure-count">${item.consecutiveFailures} 次</span>` : "0"}${item.lastFetchErrorCode ? `<small>${safe(item.lastFetchErrorCode)}</small>` : ""}</td>
+      <td><div class="actions"><button class="button button--small" data-action="manual-fetch" data-id="${safe(item.id)}" type="button">抓取验证</button><button class="button button--small button--neutral" data-action="edit-source" data-id="${safe(item.id)}" type="button">编辑</button><button class="switch ${item.enabled ? "is-on" : ""}" data-action="toggle-source" data-id="${safe(item.id)}" type="button" aria-label="${item.enabled ? "停用" : "启用"}${safe(item.displayName)}"></button></div></td>
     </tr>`).join("");
   return `
-    ${pageHeading("动态源与健康度", "统一维护 RSS 地址、启停状态和最新抓取健康度；手动验证默认不产生推送。", `<button class="button button--primary" data-action="add-source" type="button">${icon("plus")} 新增动态源</button>`)}
-    <section class="source-overview"><article class="card mini-stat"><span>启用来源</span><strong>14</strong></article><article class="card mini-stat"><span>异常来源</span><strong style="color:var(--red)">2</strong></article><article class="card mini-stat"><span>近 24h 新动态</span><strong>86</strong></article><article class="card mini-stat"><span>平均抓取耗时</span><strong>1.28s</strong></article></section>
+    ${pageHeading("动态源与健康度", "统一维护 RSS 地址、启停状态和最新抓取健康度；手动验证只做校验，不入库、不推送。", `<button class="button button--primary" data-action="add-source" type="button">${icon("plus")} 新增动态源</button>`)}
+    <section class="source-overview"><article class="card mini-stat"><span>正常来源</span><strong>${summary.healthy ?? 0}</strong></article><article class="card mini-stat"><span>抓取失败</span><strong style="color:var(--red)">${summary.failed ?? 0}</strong></article><article class="card mini-stat"><span>超过 24h 未成功</span><strong style="color:var(--red)">${summary.stale ?? 0}</strong></article><article class="card mini-stat"><span>待首次抓取</span><strong>${summary.waiting ?? 0}</strong></article></section>
     <section class="card data-card">
-      <div class="data-card__toolbar"><div class="toolbar">${searchField("source-search", "搜索 idol 或来源名称")}<label class="field">健康状态 <select id="source-status"><option value="all">全部</option><option value="healthy" ${state.sourceStatus === "healthy" ? "selected" : ""}>正常</option><option value="failed" ${state.sourceStatus === "failed" ? "selected" : ""}>异常</option><option value="waiting" ${state.sourceStatus === "waiting" ? "selected" : ""}>待抓取</option><option value="disabled" ${state.sourceStatus === "disabled" ? "selected" : ""}>停用</option></select></label></div><span class="result-count" id="source-count">共 ${filtered.length} 个来源</span></div>
-      <div class="table-wrap"><table><thead><tr><th>来源</th><th>RSS 地址（仅管理端）</th><th>健康状态</th><th>最近抓取</th><th>最近成功</th><th>解析 / 新增</th><th>连续失败</th><th>操作</th></tr></thead><tbody id="source-table">${rows || '<tr><td colspan="8"><div class="empty">没有符合条件的来源</div></td></tr>'}</tbody></table></div>${pagination()}
+      <div class="data-card__toolbar"><div class="toolbar">${searchField("source-search", "搜索 idol 或来源名称")}<label class="field">健康状态 <select id="source-status"><option value="all">全部</option><option value="healthy" ${state.sourceStatus === "healthy" ? "selected" : ""}>正常</option><option value="failed" ${state.sourceStatus === "failed" ? "selected" : ""}>抓取失败</option><option value="stale" ${state.sourceStatus === "stale" ? "selected" : ""}>长期未成功</option><option value="waiting" ${state.sourceStatus === "waiting" ? "selected" : ""}>待抓取</option><option value="disabled" ${state.sourceStatus === "disabled" ? "selected" : ""}>停用</option></select></label></div><span class="result-count" id="source-count">共 ${state.sources.length} 个来源</span></div>
+      <div class="table-wrap"><table><thead><tr><th>来源</th><th>RSS 地址（仅管理端）</th><th>健康状态</th><th>最近抓取</th><th>最近成功</th><th>解析 / 新增</th><th>连续失败</th><th>操作</th></tr></thead><tbody id="source-table">${rows || '<tr><td colspan="8"><div class="empty">没有符合条件的来源</div></td></tr>'}</tbody></table></div>
     </section>`;
 }
 
@@ -219,12 +223,12 @@ function deliveriesPage() {
 
 function requestsPage() {
   const labels = { pending: "待审核", approved: "已通过", rejected: "已驳回", all: "全部" };
-  const filtered = state.requests.filter((item) => state.requestFilter === "all" || item.status === state.requestFilter);
   const tabs = Object.entries(labels).map(([value, label]) => `<button class="${state.requestFilter === value ? "is-active" : ""}" data-request-filter="${value}" type="button">${label}</button>`).join("");
-  const rows = filtered.map((item) => `<tr data-search="${safe(`${item.name} ${item.note}`)}"><td><strong>${safe(item.name)}</strong><div class="request-user">${safe(item.requester)}</div></td><td><strong>${number(item.support)}</strong><div class="progress"><span style="width:${Math.min(100, item.support / 3.5)}%"></span></div></td><td><div class="request-note">${safe(item.note || "未填写补充说明")}</div></td><td>${safe(item.createdAt)}</td><td>${statusBadge(item.status)}</td><td>${item.status === "pending" ? `<div class="actions"><button class="button button--small" data-action="approve-request" data-id="${item.id}" type="button">通过</button><button class="button button--small button--danger" data-action="reject-request" data-id="${item.id}" type="button">驳回</button></div>` : `<button class="button button--small button--neutral" data-action="request-detail" data-id="${item.id}" type="button">查看结果</button>`}</td></tr>`).join("");
+  const top = Math.max(1, ...state.requests.map((item) => item.supporterCount));
+  const rows = state.requests.map((item) => `<tr data-search="${safe(`${item.displayName} ${item.note || ""}`)}"><td><strong>${safe(item.displayName)}</strong><div class="request-user">合并键 ${safe(item.normalizedName)}</div></td><td><strong>${number(item.supporterCount)}</strong><div class="progress"><span style="width:${Math.round((item.supporterCount / top) * 100)}%"></span></div></td><td><div class="request-note">${safe(item.note || "未填写补充说明")}</div></td><td>${timeText(item.createdAt)}</td><td>${statusBadge(item.status)}</td><td>${item.status === "pending" ? `<div class="actions"><button class="button button--small" data-action="approve-request" data-id="${safe(item.id)}" type="button">通过</button><button class="button button--small button--danger" data-action="reject-request" data-id="${safe(item.id)}" type="button">驳回</button></div>` : `<button class="button button--small button--neutral" data-action="request-detail" data-id="${safe(item.id)}" type="button">查看结果</button>`}</td></tr>`).join("");
   return `
     ${pageHeading("idol 申请审核", "优先处理支持人数高的申请；通过时创建或关联正式 idol。")}
-    <section class="card data-card"><div class="data-card__toolbar"><div class="toolbar"><div class="filter-tabs">${tabs}</div>${searchField("request-search", "搜索申请名称")}</div><span class="result-count" id="request-count">${filtered.length} 条申请</span></div><div class="table-wrap"><table><thead><tr><th>申请 idol</th><th>支持人数</th><th>用户说明</th><th>申请时间</th><th>状态</th><th>操作</th></tr></thead><tbody id="request-table">${rows || '<tr><td colspan="6"><div class="empty">当前状态下没有申请</div></td></tr>'}</tbody></table></div>${pagination()}</section>`;
+    <section class="card data-card"><div class="data-card__toolbar"><div class="toolbar"><div class="filter-tabs">${tabs}</div>${searchField("request-search", "搜索申请名称")}</div><span class="result-count" id="request-count">${state.requests.length} 条申请</span></div><div class="table-wrap"><table><thead><tr><th>申请 idol</th><th>支持人数</th><th>用户说明</th><th>申请时间</th><th>状态</th><th>操作</th></tr></thead><tbody id="request-table">${rows || '<tr><td colspan="6"><div class="empty">当前状态下没有申请</div></td></tr>'}</tbody></table></div></section>`;
 }
 
 function auditPage() {
@@ -252,6 +256,47 @@ function renderPage({ focus = true } = {}) {
   if (focus) $("#page-root").focus({ preventScroll: true });
 }
 
+async function loadIdols() {
+  state.idols = (await adminRequest("/admin/v1/idols")).idols;
+}
+
+async function loadSources() {
+  // 健康度筛选交给服务端：判定逻辑只有一份，筛选结果和列表展示不会互相矛盾。
+  const query = state.sourceStatus === "all" ? "" : `?health=${encodeURIComponent(state.sourceStatus)}`;
+  const data = await adminRequest(`/admin/v1/sources${query}`);
+  state.sources = data.sources;
+  state.sourceSummary = data.summary;
+}
+
+async function loadRequests() {
+  const query = state.requestFilter === "all" ? "" : `?status=${encodeURIComponent(state.requestFilter)}`;
+  const data = await adminRequest(`/admin/v1/idol-requests${query}`);
+  state.requests = data.requests;
+  state.pendingCount = data.pendingCount;
+  pageMeta.requests.badge = data.pendingCount;
+}
+
+// 新建来源要选所属 idol，所以来源页同时需要 idol 列表。
+const loaders = {
+  dashboard: () => Promise.all([loadSources(), loadRequests()]),
+  idols: loadIdols,
+  sources: () => Promise.all([loadSources(), loadIdols()]),
+  requests: loadRequests,
+};
+
+/** 拉取当前页数据并重绘；失败时保留上一次结果并提示，不把页面清空。 */
+async function reload() {
+  const load = loaders[state.page];
+  if (load) {
+    try {
+      await load();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "管理后台暂时不可用");
+    }
+  }
+  renderPage({ focus: false });
+}
+
 function navigate(page) {
   if (!renderers[page]) return;
   state.page = page;
@@ -259,6 +304,7 @@ function navigate(page) {
   window.scrollTo(0, 0);
   $("#sidebar").classList.remove("is-open");
   history.replaceState(null, "", `#${page}`);
+  void reload();
 }
 
 let toastTimer;
@@ -276,10 +322,17 @@ function openModal({ eyebrow = "管理操作", title, body, confirm = "保存", 
   $("#modal-title").textContent = title;
   $("#modal-body").innerHTML = body;
   $("#modal-footer").innerHTML = `<button class="button button--neutral" value="cancel" type="submit">取消</button><button class="button ${danger ? "button--danger" : "button--primary"}" id="modal-confirm" type="button">${confirm}</button>`;
-  $("#modal-confirm").addEventListener("click", () => {
-    if (onConfirm?.() === false) return;
-    modal.close();
-  }, { once: true });
+  // onConfirm 可能是网络请求：期间禁用按钮防重复提交，返回 false 时保留已填内容。
+  $("#modal-confirm").addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      if (await onConfirm?.() === false) return;
+      modal.close();
+    } finally {
+      button.disabled = false;
+    }
+  });
   modal.showModal();
 }
 
@@ -290,8 +343,33 @@ function openDrawer({ eyebrow = "详情", title, body }) {
   $("#drawer").showModal();
 }
 
-function idolForm(item = {}) {
-  return `<div class="form-grid" id="idol-form"><label class="form-field"><span>名称 *</span><input name="name" value="${safe(item.name || "")}" placeholder="请输入 idol 名称" required /></label><label class="form-field"><span>状态</span><select name="status"><option value="enabled" ${item.status !== "disabled" ? "selected" : ""}>启用</option><option value="disabled" ${item.status === "disabled" ? "selected" : ""}>停用</option></select></label><label class="form-field form-field--wide"><span>简介</span><textarea name="bio" placeholder="简要描述身份或业务标签">${safe(item.bio || "")}</textarea></label><label class="form-field form-field--wide"><span>头像地址</span><input name="avatar" type="url" placeholder="https://..." /><p class="form-hint">原型仅展示字段；正式版上传后应保存受控资源地址。</p></label></div>`;
+/**
+ * 提交一次管理端写操作。
+ *
+ * <p>失败时返回 false 让弹窗保持打开：表单内容还在，管理员改完可以直接重试，
+ * 不需要把刚填的 RSS 地址再敲一遍。
+ */
+async function submitChange(action, success) {
+  try {
+    await action();
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : "操作失败");
+    return false;
+  }
+  await reload();
+  showToast(success);
+  return true;
+}
+
+function idolForm(item) {
+  const creating = !item;
+  return `<div class="form-grid" id="idol-form">
+    ${creating ? '<label class="form-field"><span>idol 标识 *</span><input name="id" placeholder="例如 wang_yibo" /><p class="form-hint">小写字母、数字、下划线或中划线，创建后不可修改。</p></label>' : ""}
+    <label class="form-field"><span>名称 *</span><input name="name" value="${safe(item?.name || "")}" placeholder="请输入 idol 名称" required /></label>
+    <label class="form-field"><span>状态</span><select name="enabled"><option value="true" ${item?.enabled !== false ? "selected" : ""}>启用</option><option value="false" ${item?.enabled === false ? "selected" : ""}>停用</option></select></label>
+    <label class="form-field form-field--wide"><span>简介</span><textarea name="bio" placeholder="简要描述身份或业务标签">${safe(item?.bio || "")}</textarea></label>
+    <label class="form-field form-field--wide"><span>头像地址</span><input name="avatar" type="url" value="${safe(item?.avatar || "")}" placeholder="https://..." /></label>
+  </div>`;
 }
 
 function editIdol(id) {
@@ -300,77 +378,120 @@ function editIdol(id) {
     const form = $("#idol-form");
     const name = $("[name=name]", form).value.trim();
     if (!name) { showToast("请填写 idol 名称"); return false; }
-    const bio = $("[name=bio]", form).value.trim();
-    const status = $("[name=status]", form).value;
-    if (item) Object.assign(item, { name, initial: name.slice(0, 1), bio, status, version: item.version + 1, updatedAt: "刚刚" });
-    else state.idols.unshift({ id: Date.now(), name, initial: name.slice(0, 1), bio, status, sources: 0, posts: 0, guards: 0, version: 1, updatedAt: "刚刚" });
-    renderPage({ focus: false });
-    showToast(item ? "idol 信息已更新（原型数据）" : "idol 已创建（原型数据）");
+    const payload = {
+      name,
+      bio: $("[name=bio]", form).value.trim(),
+      avatar: $("[name=avatar]", form).value.trim(),
+      enabled: $("[name=enabled]", form).value === "true",
+    };
+    if (item) {
+      return submitChange(
+        () => adminRequest(`/admin/v1/idols/${encodeURIComponent(item.id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ ...payload, version: item.version }),
+        }),
+        "idol 信息已更新");
+    }
+    const newId = $("[name=id]", form).value.trim();
+    if (!newId) { showToast("请填写 idol 标识"); return false; }
+    return submitChange(
+      () => adminRequest("/admin/v1/idols", { method: "POST", body: JSON.stringify({ id: newId, ...payload }) }),
+      "idol 已创建");
   }});
 }
 
 function toggleIdol(id) {
   const item = state.idols.find((idol) => idol.id === id);
   if (!item) return;
-  const disabling = item.status === "enabled";
+  const disabling = item.enabled;
   const body = disabling
-    ? `<div class="impact-box"><strong>影响范围</strong><br />${item.sources} 个动态源将停止抓取；${number(item.guards)} 位守护用户不再收到新推送。历史动态、守护关系和投递记录都会保留。</div>`
+    ? `<div class="impact-box"><strong>影响范围</strong><br />${item.sourceCount} 个动态源将停止抓取；${number(item.guardCount)} 位守护用户不再收到新推送。历史动态、守护关系和投递记录都会保留。</div>`
     : "<p>启用后，该 idol 的已启用来源会在下一轮调度恢复抓取。</p>";
-  openModal({ eyebrow: "状态变更", title: `${disabling ? "停用" : "启用"} ${item.name}`, body, confirm: disabling ? "确认停用" : "确认启用", danger: disabling, onConfirm: () => {
-    item.status = disabling ? "disabled" : "enabled";
-    item.version += 1;
-    item.updatedAt = "刚刚";
-    renderPage({ focus: false });
-    showToast(`${item.name} 已${disabling ? "停用" : "启用"}（原型数据）`);
-  }});
+  openModal({ eyebrow: "状态变更", title: `${disabling ? "停用" : "启用"} ${item.name}`, body, confirm: disabling ? "确认停用" : "确认启用", danger: disabling, onConfirm: () => submitChange(
+    () => adminRequest(`/admin/v1/idols/${encodeURIComponent(item.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ enabled: !item.enabled, version: item.version }),
+    }),
+    `${item.name} 已${disabling ? "停用" : "启用"}`) });
 }
 
-function sourceForm(item = {}) {
-  return `<div class="form-grid" id="source-form"><label class="form-field"><span>所属 idol *</span><select name="idol">${state.idols.map((idol) => `<option ${idol.name === item.idol ? "selected" : ""}>${safe(idol.name)}</option>`).join("")}</select></label><label class="form-field"><span>渠道 *</span><select name="channel"><option ${item.channel === "微博" ? "selected" : ""}>微博</option><option>工作室</option><option>行程</option></select></label><label class="form-field form-field--wide"><span>展示名称 *</span><input name="name" value="${safe(item.name || "")}" placeholder="例如：王一博工作室 · 微博" /></label><label class="form-field form-field--wide"><span>RSS 地址 *</span><input name="url" type="url" value="${safe(item.url || "")}" placeholder="https://rss.example.com/..." /><p class="form-hint">保存前应由服务端执行地址、重定向、内网目标和响应大小安全校验。</p></label></div>`;
+function sourceForm(item) {
+  const creating = !item;
+  return `<div class="form-grid" id="source-form">
+    ${creating ? '<label class="form-field"><span>来源标识 *</span><input name="id" placeholder="例如 wang_yibo_weibo" /></label>' : ""}
+    ${creating ? `<label class="form-field"><span>所属 idol *</span><select name="idolId">${state.idols.map((idol) => `<option value="${safe(idol.id)}">${safe(idol.name)}</option>`).join("")}</select></label>` : ""}
+    <label class="form-field"><span>渠道 *</span><input name="channel" value="${safe(item?.channel || "微博")}" placeholder="例如 微博" /></label>
+    <label class="form-field"><span>状态</span><select name="enabled"><option value="true" ${item?.enabled !== false ? "selected" : ""}>启用</option><option value="false" ${item?.enabled === false ? "selected" : ""}>停用</option></select></label>
+    <label class="form-field form-field--wide"><span>展示名称 *</span><input name="displayName" value="${safe(item?.displayName || "")}" placeholder="例如：王一博工作室 · 微博" /></label>
+    <label class="form-field form-field--wide"><span>RSS 地址 *</span><input name="rssUrl" type="url" value="${safe(item?.rssUrl || "")}" placeholder="https://rss.example.com/..." /><p class="form-hint">保存前由服务端执行协议、内网目标与 DNS 解析安全校验，校验不通过不会入库。</p></label>
+  </div>`;
 }
 
 function editSource(id) {
   const item = state.sources.find((source) => source.id === id);
-  openModal({ title: item ? `编辑 ${item.name}` : "新增动态源", body: sourceForm(item), confirm: item ? "保存并校验" : "创建并校验", onConfirm: () => {
+  if (!item && state.idols.length === 0) { showToast("请先创建至少一个 idol"); return; }
+  openModal({ title: item ? `编辑 ${item.displayName}` : "新增动态源", body: sourceForm(item), confirm: item ? "保存并校验" : "创建并校验", onConfirm: () => {
     const form = $("#source-form");
-    const name = $("[name=name]", form).value.trim();
-    const url = $("[name=url]", form).value.trim();
-    if (!name || !url.startsWith("https://")) { showToast("请填写名称和有效 HTTPS 地址"); return false; }
-    const idol = $("[name=idol]", form).value;
-    const channel = $("[name=channel]", form).value;
-    if (item) Object.assign(item, { name, url, idol, channel });
-    else state.sources.unshift({ id: Date.now(), idol, name, channel, url, status: "waiting", enabled: true, lastFetch: "尚未抓取", lastSuccess: "—", parsed: 0, added: 0, failures: 0 });
-    renderPage({ focus: false });
-    showToast("动态源已保存，安全校验通过（原型）");
+    const displayName = $("[name=displayName]", form).value.trim();
+    const rssUrl = $("[name=rssUrl]", form).value.trim();
+    if (!displayName || !rssUrl) { showToast("请填写展示名称和 RSS 地址"); return false; }
+    const payload = {
+      rssUrl,
+      displayName,
+      channel: $("[name=channel]", form).value.trim() || "RSS",
+      enabled: $("[name=enabled]", form).value === "true",
+    };
+    if (item) {
+      return submitChange(
+        () => adminRequest(`/admin/v1/sources/${encodeURIComponent(item.id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ ...payload, version: item.version }),
+        }),
+        "动态源已保存，安全校验通过");
+    }
+    const newId = $("[name=id]", form).value.trim();
+    if (!newId) { showToast("请填写来源标识"); return false; }
+    return submitChange(
+      () => adminRequest("/admin/v1/sources", {
+        method: "POST",
+        body: JSON.stringify({ id: newId, idolId: $("[name=idolId]", form).value, ...payload }),
+      }),
+      "动态源已创建，安全校验通过");
   }});
 }
 
 function toggleSource(id) {
   const item = state.sources.find((source) => source.id === id);
   if (!item) return;
-  item.enabled = !item.enabled;
-  item.status = item.enabled ? "waiting" : "disabled";
-  renderPage({ focus: false });
-  showToast(`${item.name} 已${item.enabled ? "启用" : "停用"}（原型数据）`);
+  void submitChange(
+    () => adminRequest(`/admin/v1/sources/${encodeURIComponent(item.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ enabled: !item.enabled, version: item.version }),
+    }),
+    `${item.displayName} 已${item.enabled ? "停用" : "启用"}`);
 }
 
 function manualFetch(id) {
   const item = state.sources.find((source) => source.id === id);
   if (!item) return;
-  openModal({ eyebrow: "抓取验证", title: item.name, body: '<div class="impact-box">本次操作复用定时抓取逻辑，但只做验证与入库检查，默认不创建推送任务。</div><div class="fetch-result"><div><strong>—</strong><span>解析数量</span></div><div><strong>—</strong><span>新增数量</span></div><div><strong>等待</strong><span>执行状态</span></div></div>', confirm: "开始抓取", onConfirm: () => {
+  const cell = (value, label) => `<div><strong>${safe(value)}</strong><span>${label}</span></div>`;
+  const result = (parsed, added, status) => `<div class="fetch-result">${cell(parsed, "解析数量")}${cell(added, "新增数量")}${cell(status, "执行状态")}</div>`;
+  openModal({ eyebrow: "抓取验证", title: item.displayName, body: `<div class="impact-box">本次操作复用定时抓取的下载与解析逻辑，但只读：不写入动态，也不创建推送任务。「新增数量」是若入库会新增的条数。</div>${result("—", "—", "等待")}<div id="fetch-samples"></div>`, confirm: "开始抓取", onConfirm: async () => {
     showToast("正在抓取并校验来源…");
-    setTimeout(() => {
-      const added = item.failures ? 0 : 1;
-      item.status = "healthy";
-      item.enabled = true;
-      item.lastFetch = "刚刚";
-      item.lastSuccess = "刚刚";
-      item.parsed = 20;
-      item.added = added;
-      item.failures = 0;
-      if (state.page === "sources") renderPage({ focus: false });
-      showToast(`抓取成功：解析 20 条，新增 ${added} 条；未产生推送`);
-    }, 1100);
+    let data;
+    try {
+      data = await adminRequest(`/admin/v1/sources/${encodeURIComponent(item.id)}/verify`, { method: "POST" });
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "抓取验证失败");
+      return false;
+    }
+    $(".fetch-result").outerHTML = result(data.itemCount, data.newCount, data.ok ? "成功" : safe(data.errorCode));
+    $("#fetch-samples").innerHTML = data.samples?.length
+      ? `<ul class="health-list">${data.samples.map((sample) => `<li><span>${safe(sample.title)}</span><span class="status ${sample.known ? "status--muted" : "status--success"}">${sample.known ? "已入库" : "将新增"}</span></li>`).join("")}</ul>`
+      : "";
+    showToast(data.ok ? `解析 ${data.itemCount} 条，其中 ${data.newCount} 条未入库；未产生推送` : `抓取失败：${data.errorCode}`);
+    // 只读操作不改变来源状态，保持弹窗打开让管理员看完结果再关。
+    return false;
   }});
 }
 
@@ -384,23 +505,40 @@ function reviewRequest(id, approved) {
   const item = state.requests.find((request) => request.id === id);
   if (!item) return;
   const body = approved
-    ? '<div class="form-grid" id="review-form"><label class="form-field form-field--wide"><span>通过方式</span><select name="mode"><option>创建新的正式 idol</option><option>关联已有 idol</option></select></label><label class="form-field form-field--wide"><span>审核备注</span><textarea name="note">申请通过，进入正式来源配置流程。</textarea></label><div class="form-field form-field--wide"><div class="impact-box">通过后仍需配置至少一个可用动态源；未配置来源前，小程序不会展示为可守护对象。</div></div></div>'
+    ? `<div class="form-grid" id="review-form">
+        <label class="form-field form-field--wide"><span>正式 idol 标识 *</span><input name="idolId" list="idol-options" placeholder="例如 wang_yibo" /><datalist id="idol-options">${state.idols.map((idol) => `<option value="${safe(idol.id)}">${safe(idol.name)}</option>`).join("")}</datalist><p class="form-hint">填写已有标识即关联该 idol，填写新标识则同事务创建正式 idol。</p></label>
+        <label class="form-field form-field--wide"><span>正式名称</span><input name="idolName" value="${safe(item.displayName)}" /></label>
+        <label class="form-field form-field--wide"><span>审核备注</span><textarea name="note">申请通过，进入正式来源配置流程。</textarea></label>
+        <div class="form-field form-field--wide"><div class="impact-box">通过后仍需配置至少一个可用动态源；未配置来源前，小程序不会展示为可守护对象。</div></div>
+      </div>`
     : '<div class="form-grid" id="review-form"><label class="form-field form-field--wide"><span>驳回原因 *</span><textarea name="note" placeholder="该原因会展示给申请用户"></textarea></label></div>';
-  openModal({ eyebrow: "申请审核", title: `${approved ? "通过" : "驳回"}「${item.name}」`, body, confirm: approved ? "确认通过" : "确认驳回", danger: !approved, onConfirm: () => {
-    const note = $("[name=note]", $("#review-form")).value.trim();
-    if (!approved && !note) { showToast("请填写驳回原因"); return false; }
-    item.status = approved ? "approved" : "rejected";
-    item.reviewNote = note;
-    pageMeta.requests.badge = state.requests.filter((request) => request.status === "pending").length;
-    renderPage({ focus: false });
-    showToast(`申请已${approved ? "通过" : "驳回"}（原型数据）`);
+  openModal({ eyebrow: "申请审核", title: `${approved ? "通过" : "驳回"}「${item.displayName}」`, body, confirm: approved ? "确认通过" : "确认驳回", danger: !approved, onConfirm: () => {
+    const form = $("#review-form");
+    const note = $("[name=note]", form).value.trim();
+    if (!approved) {
+      if (!note) { showToast("请填写驳回原因"); return false; }
+      return submitChange(
+        () => adminRequest(`/admin/v1/idol-requests/${encodeURIComponent(item.id)}/reject`, {
+          method: "POST",
+          body: JSON.stringify({ reviewNote: note }),
+        }),
+        "申请已驳回");
+    }
+    const idolId = $("[name=idolId]", form).value.trim();
+    if (!idolId) { showToast("请填写正式 idol 标识"); return false; }
+    return submitChange(
+      () => adminRequest(`/admin/v1/idol-requests/${encodeURIComponent(item.id)}/approve`, {
+        method: "POST",
+        body: JSON.stringify({ idolId, idolName: $("[name=idolName]", form).value.trim(), reviewNote: note }),
+      }),
+      "申请已通过");
   }});
 }
 
 function requestDetail(id) {
   const item = state.requests.find((request) => request.id === id);
   if (!item) return;
-  openDrawer({ eyebrow: "审核结果", title: item.name, body: `<dl class="detail-list"><div><dt>当前状态</dt><dd>${statusBadge(item.status)}</dd></div><div><dt>支持人数</dt><dd>${number(item.support)} 人</dd></div><div><dt>申请用户</dt><dd>${safe(item.requester)}</dd></div><div><dt>用户说明</dt><dd>${safe(item.note || "未填写")}</dd></div><div><dt>审核备注</dt><dd>${safe(item.reviewNote || (item.status === "approved" ? "申请通过，进入正式来源配置流程。" : "申请与现有条目重复。"))}</dd></div></dl>` });
+  openDrawer({ eyebrow: "审核结果", title: item.displayName, body: `<dl class="detail-list"><div><dt>当前状态</dt><dd>${statusBadge(item.status)}</dd></div><div><dt>支持人数</dt><dd>${number(item.supporterCount)} 人</dd></div><div><dt>用户说明</dt><dd>${safe(item.note || "未填写")}</dd></div><div><dt>审核人</dt><dd>${safe(item.reviewer || "—")}</dd></div><div><dt>审核时间</dt><dd>${timeText(item.reviewedAt)}</dd></div><div><dt>审核备注</dt><dd>${safe(item.reviewNote || "—")}</dd></div><div><dt>关联 idol</dt><dd>${safe(item.approvedIdolId || "—")}</dd></div></dl>` });
 }
 
 function auditDetail(id) {
@@ -427,8 +565,8 @@ function handlePageClick(event) {
   if (button.dataset.pageJump) return navigate(button.dataset.pageJump);
   if (button.dataset.toast) return showToast(button.dataset.toast);
   if (button.dataset.deliveryFilter) { state.deliveryFilter = button.dataset.deliveryFilter; return renderPage({ focus: false }); }
-  if (button.dataset.requestFilter) { state.requestFilter = button.dataset.requestFilter; return renderPage({ focus: false }); }
-  const id = Number(button.dataset.id);
+  if (button.dataset.requestFilter) { state.requestFilter = button.dataset.requestFilter; return void reload(); }
+  const id = button.dataset.id;
   const actions = {
     "add-idol": () => editIdol(),
     "edit-idol": () => editIdol(id),
@@ -442,14 +580,14 @@ function handlePageClick(event) {
     "reject-request": () => reviewRequest(id, false),
     "request-detail": () => requestDetail(id),
     "audit-detail": () => auditDetail(button.dataset.id),
-    "refresh-dashboard": () => { $("#update-time").textContent = "数据更新于 刚刚"; showToast("指标数据已刷新"); },
+    "refresh-dashboard": () => { void reload(); $("#update-time").textContent = `数据更新于 ${new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}`; },
   };
   actions[button.dataset.action]?.();
 }
 
 function handlePageChange(event) {
   if (event.target.id === "idol-status") { state.idolStatus = event.target.value; renderPage({ focus: false }); }
-  if (event.target.id === "source-status") { state.sourceStatus = event.target.value; renderPage({ focus: false }); }
+  if (event.target.id === "source-status") { state.sourceStatus = event.target.value; void reload(); }
   if (event.target.id === "audit-result") { state.auditResult = event.target.value; renderPage({ focus: false }); }
   if (event.target.id === "dashboard-range") showToast(`指标范围已切换为${event.target.value}`);
 }
@@ -487,6 +625,7 @@ function showApplication(admin) {
   const hashPage = location.hash.slice(1);
   state.page = renderers[hashPage] ? hashPage : "dashboard";
   renderPage();
+  void reload();
 }
 
 function showLogin(message = "", error = false) {
@@ -579,7 +718,7 @@ async function initialize() {
   $("#toggle-password").innerHTML = icon("eye");
   $("#mobile-menu").innerHTML = icon("menu");
   $(".notification-button").innerHTML = icon("bell");
-  $("#update-time").textContent = "数据更新于 11:20";
+  $("#update-time").textContent = `数据更新于 ${new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}`;
   $("#login-form").addEventListener("submit", (event) => { event.preventDefault(); void login(); });
   $("#toggle-password").addEventListener("click", () => {
     const input = $("#login-password");

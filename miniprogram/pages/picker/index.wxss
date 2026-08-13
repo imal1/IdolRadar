@@ -257,3 +257,49 @@
   font-size: 22rpx;
   text-align: center;
 }
+
+.my-requests {
+  margin-top: 24rpx;
+  padding: 24rpx 28rpx;
+  border-radius: 28rpx;
+  background: #ffffff;
+}
+
+.my-requests-title {
+  display: block;
+  margin-bottom: 12rpx;
+  color: #8a7480;
+  font-size: 24rpx;
+}
+
+.my-request {
+  padding: 12rpx 0;
+  border-top: 1rpx solid #f2e7ec;
+}
+
+.my-request:first-of-type {
+  border-top: none;
+}
+
+.my-request-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.my-request-name {
+  color: #4a3a42;
+  font-size: 28rpx;
+}
+
+.my-request-status {
+  color: #c4526e;
+  font-size: 22rpx;
+}
+
+.my-request-note {
+  display: block;
+  margin-top: 6rpx;
+  color: #a08f98;
+  font-size: 22rpx;
+}

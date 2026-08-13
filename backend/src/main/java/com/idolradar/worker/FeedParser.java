@@ -22,7 +22,6 @@ import java.util.regex.Pattern;
 import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilderFactory;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -36,8 +35,8 @@ import org.xml.sax.SAXException;
  * <p>禁用 DTD、实体展开、XInclude、外部 DTD/Schema 访问，防止 XXE 与实体扩展攻击；
  * 规范化链接用于生成确定性 post ID。
  */
+// 抓取链路组件不再按 app.mode 隔离：管理端手动验证也要走同一套下载与解析，两处实现会立刻分叉。
 @Component
-@ConditionalOnProperty(name = "app.mode", havingValue = "worker")
 public class FeedParser {
     // 防御纵深：即使绕过 downloader 直接调用 parser，也拒绝超大 XML。
     private static final int MAX_XML_BYTES = 5 * 1024 * 1024;

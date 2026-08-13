@@ -10,7 +10,6 @@ import java.util.List;
 import java.util.Locale;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
@@ -19,8 +18,8 @@ import org.springframework.stereotype.Component;
  * <p>仅允许 HTTPS 与公网主机/DNS 结果；任一 DNS 地址不安全即拒绝整个目标。
  * 返回的地址集合供 downloader 在连接阶段进行 DNS pin。
  */
+// 抓取链路组件不再按 app.mode 隔离：管理端手动验证也要走同一套下载与解析，两处实现会立刻分叉。
 @Component
-@ConditionalOnProperty(name = "app.mode", havingValue = "worker")
 public class FeedUrlGuard {
     @FunctionalInterface
     public interface HostResolver {

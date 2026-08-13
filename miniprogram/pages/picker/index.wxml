@@ -70,10 +70,22 @@
     <view class="no-result" wx:else>
       <text class="no-result-symbol">⌕</text>
       <text class="state-title">没找到这位 idol</text>
-      <text class="state-copy">换个名字试试，或等待后续开放自助申请</text>
+      <text class="state-copy">换个名字试试，或直接申请新增</text>
+      <view class="primary-button state-action" aria-role="button" bindtap="submitRequest">申请新增</view>
     </view>
 
-    <text class="picker-footnote">想蹲的人不在里面？之后会开放自助申请~</text>
+    <view class="my-requests" wx:if="{{myRequests.length}}">
+      <text class="my-requests-title">我的申请</text>
+      <view class="my-request" wx:for="{{myRequests}}" wx:key="_id">
+        <view class="my-request-row">
+          <text class="my-request-name">{{item.displayName}}</text>
+          <text class="my-request-status">{{item.statusLabel}} · {{item.supporterCount}} 人在等</text>
+        </view>
+        <text wx:if="{{item.reviewNote}}" class="my-request-note">{{item.reviewNote}}</text>
+      </view>
+    </view>
+
+    <text class="picker-footnote" aria-role="button" bindtap="submitRequest">想蹲的人不在里面？点这里申请新增~</text>
   </block>
 </view>
 
