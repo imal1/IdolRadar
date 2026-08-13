@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.idolradar.admin.AdminAuditRepository;
 import com.idolradar.admin.JdbcAdminAuditRepository;
 import com.idolradar.admin.AdminCatalogStore;
+import com.idolradar.admin.AdminDeliveryStore;
 import com.idolradar.admin.JdbcAdminAuthRepository;
 import com.idolradar.api.AppException;
 import com.idolradar.api.CursorCodec;
@@ -547,6 +548,71 @@ class PostgresMigrationSeedIT {
         AppException rejected = assertThrows(
                 AppException.class, () -> api.setIdol("openid-1", "idol-1"));
         assertEquals("IDOL_NOT_FOUND", rejected.code());
+    }
+
+    @Test
+    @Order(10)
+    void deliveryDashboardAggregatesStatusesFailuresAndQueueBacklog() {
+        jdbc.update("INSERT INTO idr_idol (id, name) VALUES ('idol-1', '示例'), ('idol-2', '其他')");
+        jdbc.update("INSERT INTO idr_source (id, idol_id, rss_url, display_name) "
+                + "VALUES ('source-1', 'idol-1', 'https://example.com/feed.xml', '示例源')");
+        jdbc.update("INSERT INTO idr_post (id, idol_id, source_id, title, link, published_at, fetched_at) "
+                + "VALUES ('post-1', 'idol-1', 'source-1', '动态一', 'https://example.com/1', now(), now())");
+        UUID userId = jdbc.queryForObject(
+                "INSERT INTO idr_user (openid, idol_id) VALUES ('openid-1', 'idol-1') RETURNING id",
+                UUID.class);
+        UUID otherUserId = jdbc.queryForObject(
+                "INSERT INTO idr_user (openid, idol_id) VALUES ('openid-2', 'idol-1') RETURNING id",
+                UUID.class);
+        UUID thirdUserId = jdbc.queryForObject(
+                "INSERT INTO idr_user (openid, idol_id) VALUES ('openid-3', 'idol-1') RETURNING id",
+                UUID.class);
+        jdbc.update("INSERT INTO idr_notification_delivery "
+                + "(post_id, user_id, status, attempt_count, first_opened_at, last_opened_at, open_count) "
+                + "VALUES ('post-1', ?, 'sent', 1, now(), now(), 2)", userId);
+        jdbc.update("INSERT INTO idr_notification_delivery "
+                + "(post_id, user_id, status, error_code, attempt_count) "
+                + "VALUES ('post-1', ?, 'failed', 'WECHAT_43101', 1)", otherUserId);
+        // 尝试 4 次仍未送达：这正是「反复重试」筛选要捞出来的那一条。
+        jdbc.update("INSERT INTO idr_notification_delivery "
+                + "(post_id, user_id, status, error_code, attempt_count) "
+                + "VALUES ('post-1', ?, 'retryable', 'WECHAT_45009', 4)", thirdUserId);
+        jdbc.update("INSERT INTO idr_notification_outbox (idol_id, post_id, status, created_at) "
+                + "VALUES ('idol-1', 'post-1', 'pending', now() - interval '2 hours')");
+
+        AdminDeliveryStore store = new AdminDeliveryStore(JdbcClient.create(testDataSource));
+        Map<String, Object> board = store.listDeliveries(null, null, 24);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> summary = (Map<String, Object>) board.get("summary");
+        assertEquals(3, summary.get("total"));
+        assertEquals(1, summary.get("sent"));
+        assertEquals(1, summary.get("stuck"));
+        // 成功率分母只算已出结论的投递（sent + failed + uncertain），重试中的不计入。
+        assertEquals(50.0, summary.get("successRate"));
+        assertEquals(100.0, summary.get("openRate"));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> failures = (List<Map<String, Object>>) board.get("failures");
+        assertEquals(2, failures.size());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> queue = (Map<String, Object>) board.get("queue");
+        assertEquals(1, queue.get("backlog"));
+        assertTrue(queue.get("oldestQueuedAt") != null);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> stuck =
+                (List<Map<String, Object>>) store.listDeliveries(null, "stuck", 24).get("deliveries");
+        assertEquals(1, stuck.size());
+        assertEquals(thirdUserId.toString(), stuck.get(0).get("userId"));
+
+        // idol 维度筛选：另一个 idol 下没有任何投递与积压。
+        @SuppressWarnings("unchecked")
+        Map<String, Object> otherIdol = (Map<String, Object>) store.listDeliveries("idol-2", null, 24).get("summary");
+        assertEquals(0, otherIdol.get("total"));
+        assertThrows(AppException.class, () -> store.listDeliveries(null, "nonsense", 24));
+        assertThrows(AppException.class, () -> store.listDeliveries(null, null, 24 * 31));
     }
 
     private DatabaseCredentials databaseCredentials() {

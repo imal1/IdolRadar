@@ -1,6 +1,6 @@
 "use strict";
 
-// 身份、idol、动态源、申请审核连接真实 API；推送投递与审计日志仍为演示数据，随对应 Issue 替换。
+// 身份、idol、动态源、申请审核、推送投递连接真实 API；审计日志仍为演示数据，随对应 Issue 替换。
 
 const icons = {
   dashboard: '<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>',
@@ -55,14 +55,12 @@ const state = {
   sourceSummary: {},
   requests: [],
   pendingCount: 0,
-  deliveries: [
-    { id: "DLV-20260809-0186", user: "用户 #1028", idol: "王一博", post: "WB-882901", status: "success", retries: 0, sentAt: "今天 11:18:08", openedAt: "今天 11:24:36", reason: "—" },
-    { id: "DLV-20260809-0185", user: "用户 #0932", idol: "赵露思", post: "WB-882896", status: "success", retries: 0, sentAt: "今天 11:16:42", openedAt: "—", reason: "—" },
-    { id: "DLV-20260809-0184", user: "用户 #1124", idol: "王一博", post: "WB-882901", status: "retry", retries: 2, sentAt: "今天 11:15:10", openedAt: "—", reason: "微信接口请求超时，等待第 3 次重试" },
-    { id: "DLV-20260809-0183", user: "用户 #0841", idol: "白鹿", post: "WB-882877", status: "failed", retries: 3, sentAt: "今天 11:12:25", openedAt: "—", reason: "用户拒绝接收该模板消息" },
-    { id: "DLV-20260809-0182", user: "用户 #0738", idol: "檀健次", post: "WB-882865", status: "queued", retries: 0, sentAt: "—", openedAt: "—", reason: "等待投递" },
-    { id: "DLV-20260809-0181", user: "用户 #0665", idol: "王一博", post: "WB-882852", status: "success", retries: 1, sentAt: "今天 11:03:16", openedAt: "今天 11:08:05", reason: "—" },
-  ],
+  deliveries: [],
+  deliverySummary: {},
+  deliveryFailures: [],
+  deliveryQueue: {},
+  deliveryRange: 24,
+  deliveryIdol: "all",
   audits: [
     { id: "AUD-00816", operator: "管理员", action: "UPDATE_SOURCE", resource: "idr_source#13", result: "success", requestId: "req-3a9f71", summary: "更新来源 RSS 地址", time: "今天 11:06:22", before: '{"rss_url":"https://old.example.com/route"}', after: '{"rss_url":"https://rss.example.com/weibo/user/guard-club"}' },
     { id: "AUD-00815", operator: "管理员", action: "TRIGGER_FETCH", resource: "idr_source#13", result: "success", requestId: "req-3a9e82", summary: "手动验证来源，不产生推送", time: "今天 10:52:18", before: "{}", after: '{"parsed":20,"inserted":0,"status":"SUCCESS"}' },
@@ -94,6 +92,8 @@ function statusBadge(status) {
   const map = {
     enabled: ["启用", "badge--success"], disabled: ["停用", "badge--neutral"], healthy: ["正常", "badge--success"], waiting: ["待抓取", "badge--violet"], stale: ["长期未成功", "badge--warning"],
     success: ["成功", "badge--success"], failed: ["失败", "badge--warning"], retry: ["重试中", "badge--warning"], queued: ["待发送", "badge--violet"], pending: ["待审核", "badge--warning"], approved: ["已通过", "badge--success"], rejected: ["已驳回", "badge--neutral"],
+    // 投递账本的持久化状态，与后端 ck_idr_notification_delivery_status 一一对应。
+    sent: ["成功", "badge--success"], sending: ["发送中", "badge--violet"], reserved: ["已预留额度", "badge--violet"], retryable: ["重试中", "badge--warning"], uncertain: ["结果未知", "badge--warning"],
   };
   const [label, className] = map[status] || [status, "badge--neutral"];
   return `<span class="badge ${className}">${label}</span>`;
@@ -113,6 +113,14 @@ function searchField(id, placeholder) {
 
 function pagination() {
   return '<div class="pagination"><button type="button" data-toast="已经是第一页">‹</button><button class="is-active" type="button">1</button><button type="button" data-toast="原型当前只有一页数据">2</button><button type="button" data-toast="原型当前只有一页数据">›</button></div>';
+}
+
+/** 首页投递条形：按窗口内最大一项归一化，量级悬殊时失败条也仍然可见。 */
+function deliveryBars() {
+  const summary = state.deliverySummary;
+  const rows = [["成功", summary.sent ?? 0, "#4c9a72"], ["重试", summary.retryable ?? 0, "#d88727"], ["失败", (summary.failed ?? 0) + (summary.uncertain ?? 0), "#c4526e"]];
+  const top = Math.max(1, ...rows.map(([, value]) => value));
+  return rows.map(([label, value, color]) => `<div class="bar-row"><span>${label}</span><span class="bar-track"><span style="width:${Math.round((value / top) * 100)}%;background:${color}"></span></span><strong>${number(value)}</strong></div>`).join("");
 }
 
 function dashboardPage() {
@@ -159,7 +167,7 @@ function dashboardPage() {
     <section class="bottom-grid">
       <article class="card">
         <div class="card__header"><div><h3>推送投递</h3><p>最近 24 小时投递状态</p></div><button class="text-button" data-page-jump="deliveries" type="button">查看看板 ›</button></div>
-        <div class="card__body"><div class="delivery-summary"><div class="donut"><div class="donut__label"><strong>96.2%</strong><span>成功率</span></div></div><div class="bar-list"><div class="bar-row"><span>成功</span><span class="bar-track"><span style="width:96.2%"></span></span><strong>1,286</strong></div><div class="bar-row"><span>重试</span><span class="bar-track"><span style="width:18%;background:#d88727"></span></span><strong>18</strong></div><div class="bar-row"><span>失败</span><span class="bar-track"><span style="width:12%;background:#c4526e"></span></span><strong>12</strong></div></div></div><div class="queue-foot"><span>待发队列</span><strong>24</strong></div></div>
+        <div class="card__body"><div class="delivery-summary"><div class="donut"><div class="donut__label"><strong>${state.deliverySummary.successRate ?? 0}%</strong><span>成功率</span></div></div><div class="bar-list">${deliveryBars()}</div></div><div class="queue-foot"><span>待发队列</span><strong>${number(state.deliveryQueue.backlog ?? 0)}</strong></div></div>
       </article>
       <article class="card">
         <div class="card__header"><div><h3>idol 申请队列 <span class="badge badge--warning">待处理 ${state.pendingCount}</span></h3><p>按支持人数排序</p></div><button class="text-button" data-page-jump="requests" type="button">查看全部 ›</button></div>
@@ -210,15 +218,29 @@ function sourcesPage() {
     </section>`;
 }
 
+/** 投递没有单列主键，(post_id, user_id) 才是账本主键，详情按这个复合键回查。 */
+function deliveryKey(item) {
+  return `${item.postId} ${item.userId}`;
+}
+
 function deliveriesPage() {
-  const labels = { all: "全部", queued: "待发送", success: "成功", retry: "重试中", failed: "失败" };
-  const filtered = state.deliveries.filter((item) => state.deliveryFilter === "all" || item.status === state.deliveryFilter);
-  const tabs = Object.entries(labels).map(([value, label]) => `<button class="${state.deliveryFilter === value ? "is-active" : ""}" data-delivery-filter="${value}" type="button">${label}</button>`).join("");
-  const rows = filtered.map((item) => `<tr><td><button class="text-button" data-action="delivery-detail" data-id="${item.id}" type="button">${item.id}</button></td><td>${safe(item.user)}</td><td>${safe(item.idol)}</td><td>${safe(item.post)}</td><td>${statusBadge(item.status)}</td><td>${item.retries}</td><td>${safe(item.sentAt)}</td><td>${safe(item.openedAt)}</td><td><button class="button button--small button--neutral" data-action="delivery-detail" data-id="${item.id}" type="button">查看</button></td></tr>`).join("");
+  const labels = { all: "全部", sent: "成功", retryable: "重试中", failed: "失败", uncertain: "结果未知", reserved: "待发送", stuck: "反复重试" };
+  const summary = state.deliverySummary;
+  const queue = state.deliveryQueue;
+  const tabs = Object.entries(labels).map(([value, label]) => `<button class="${state.deliveryFilter === value ? "is-active" : ""}" data-delivery-filter="${value}" type="button">${label}${summary[value] ? ` ${summary[value]}` : ""}</button>`).join("");
+  const rows = state.deliveries.map((item) => `<tr><td><button class="text-button" data-action="delivery-detail" data-id="${safe(deliveryKey(item))}" type="button">${safe(item.postTitle || item.postId)}</button><div class="request-user">${safe(item.postId)}</div></td><td>${safe(item.userId.slice(0, 8))}</td><td>${safe(item.idolName)}</td><td>${statusBadge(item.status)}${item.errorCode ? `<small>${safe(item.errorCode)}</small>` : ""}</td><td>${item.attemptCount}</td><td>${timeText(item.createdAt)}</td><td>${timeText(item.finishedAt)}</td><td>${item.openCount > 0 ? timeText(item.firstOpenedAt) : "—"}</td><td><button class="button button--small button--neutral" data-action="delivery-detail" data-id="${safe(deliveryKey(item))}" type="button">查看</button></td></tr>`).join("");
+  // 失败原因按最大值归一化成条形，管理员一眼看出主导错误码，而不是读一列数字。
+  const topFailure = Math.max(1, ...state.deliveryFailures.map((item) => item.total));
+  const failureRows = state.deliveryFailures.map((item) => `<div class="bar-row"><span>${safe(item.errorCode)}</span><span class="bar-track"><span style="width:${Math.round((item.total / topFailure) * 100)}%;background:#c4526e"></span></span><strong>${number(item.total)}</strong></div>`).join("");
+  const ranges = { 24: "最近 24 小时", 168: "最近 7 天", 720: "最近 30 天" };
   return `
-    ${pageHeading("推送投递看板", "观察 outbox 积压、微信投递状态、失败原因与推送回访，不展示用户 OpenID。", `<button class="button button--neutral" data-toast="投递对账任务已提交" type="button">${icon("refresh")} 触发对账</button>`)}
-    <section class="source-overview"><article class="card mini-stat"><span>待发队列</span><strong>24</strong></article><article class="card mini-stat"><span>最久等待</span><strong>42s</strong></article><article class="card mini-stat"><span>今日成功率</span><strong style="color:var(--green)">96.4%</strong></article><article class="card mini-stat"><span>今日回访率</span><strong>41.2%</strong></article></section>
-    <section class="card data-card"><div class="data-card__toolbar"><div class="toolbar"><div class="filter-tabs">${tabs}</div><label class="field">时间 <select><option>今天</option><option>最近 7 天</option><option>最近 30 天</option></select></label><label class="field">idol <select><option>全部 idol</option>${state.idols.map((item) => `<option>${safe(item.name)}</option>`).join("")}</select></label></div><span class="result-count">${filtered.length} 条演示记录</span></div><div class="table-wrap"><table><thead><tr><th>投递编号</th><th>用户</th><th>idol</th><th>动态</th><th>状态</th><th>重试</th><th>发送时间</th><th>回访时间</th><th>操作</th></tr></thead><tbody>${rows || '<tr><td colspan="9"><div class="empty">当前状态下没有投递记录</div></td></tr>'}</tbody></table></div>${pagination()}</section>`;
+    ${pageHeading("推送投递看板", "观察 outbox 积压、微信投递状态、失败原因与推送回访，不展示用户 OpenID。", `<button class="button button--neutral" data-action="refresh-deliveries" type="button">${icon("refresh")} 刷新</button>`)}
+    <section class="source-overview"><article class="card mini-stat"><span>待发队列</span><strong${queue.backlog ? ' style="color:var(--red)"' : ""}>${number(queue.backlog ?? 0)}</strong></article><article class="card mini-stat"><span>最久等待</span><strong>${timeText(queue.oldestQueuedAt)}</strong></article><article class="card mini-stat"><span>投递成功率</span><strong style="color:var(--green)">${summary.successRate ?? 0}%</strong></article><article class="card mini-stat"><span>推送回访率</span><strong>${summary.openRate ?? 0}%</strong></article></section>
+    <section class="dashboard-grid">
+      <article class="card"><div class="card__header"><div><h3>状态分布</h3><p>${safe(ranges[state.deliveryRange] || "")}内创建的投递</p></div></div><div class="card__body"><div class="health-summary"><div class="summary-chip">成功<strong>${number(summary.sent ?? 0)}</strong></div><div class="summary-chip is-warning">重试中<strong>${number(summary.retryable ?? 0)}</strong></div><div class="summary-chip is-warning">失败<strong>${number(summary.failed ?? 0)}</strong></div><div class="summary-chip is-muted">发送中<strong>${number((summary.sending ?? 0) + (summary.reserved ?? 0))}</strong></div><div class="summary-chip is-warning">结果未知<strong>${number(summary.uncertain ?? 0)}</strong></div></div><div class="queue-foot"><span>反复重试未成功</span><strong>${number(summary.stuck ?? 0)}</strong></div></div></article>
+      <article class="card"><div class="card__header"><div><h3>失败原因分布</h3><p>失败、重试与结果未知的错误码</p></div></div><div class="card__body"><div class="bar-list">${failureRows || '<div class="empty">窗口内没有失败投递</div>'}</div><div class="queue-foot"><span>队列积压（pending / processing / retryable）</span><strong>${number(queue.pending ?? 0)} / ${number(queue.processing ?? 0)} / ${number(queue.retryable ?? 0)}</strong></div></div></article>
+    </section>
+    <section class="card data-card"><div class="data-card__toolbar"><div class="toolbar"><div class="filter-tabs">${tabs}</div><label class="field">时间 <select id="delivery-range">${Object.entries(ranges).map(([value, label]) => `<option value="${value}" ${String(state.deliveryRange) === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><label class="field">idol <select id="delivery-idol"><option value="all">全部 idol</option>${state.idols.map((item) => `<option value="${safe(item.id)}" ${state.deliveryIdol === item.id ? "selected" : ""}>${safe(item.name)}</option>`).join("")}</select></label></div><span class="result-count">${state.deliveries.length >= 200 ? "仅显示最近 200 条" : `${state.deliveries.length} 条投递`}</span></div><div class="table-wrap"><table><thead><tr><th>动态</th><th>用户</th><th>idol</th><th>状态</th><th>尝试次数</th><th>创建时间</th><th>结束时间</th><th>回访时间</th><th>操作</th></tr></thead><tbody>${rows || '<tr><td colspan="9"><div class="empty">当前条件下没有投递记录</div></td></tr>'}</tbody></table></div></section>`;
 }
 
 function requestsPage() {
@@ -276,11 +298,31 @@ async function loadRequests() {
   pageMeta.requests.badge = data.pendingCount;
 }
 
-// 新建来源要选所属 idol，所以来源页同时需要 idol 列表。
+/**
+ * 拉取投递看板数据。
+ *
+ * <p>状态、时间区间、idol 全部作为查询参数下发：分布与积压必须按同一条件由服务端聚合，
+ * 前端只拿到最近 200 条明细，本地过滤会得出与汇总互相矛盾的数字。
+ *
+ * @param scoped 首页概览固定看全量近 24 小时，不能跟着投递页的筛选走，否则卡片标题与数字不符
+ */
+async function loadDeliveries({ scoped = true } = {}) {
+  const query = new URLSearchParams({ rangeHours: String(scoped ? state.deliveryRange : 24) });
+  if (scoped && state.deliveryFilter !== "all") query.set("status", state.deliveryFilter);
+  if (scoped && state.deliveryIdol !== "all") query.set("idolId", state.deliveryIdol);
+  const data = await adminRequest(`/admin/v1/deliveries?${query}`);
+  state.deliveries = data.deliveries;
+  state.deliverySummary = data.summary;
+  state.deliveryFailures = data.failures;
+  state.deliveryQueue = data.queue;
+}
+
+// 新建来源要选所属 idol，所以来源页同时需要 idol 列表；投递页的 idol 筛选同理。
 const loaders = {
-  dashboard: () => Promise.all([loadSources(), loadRequests()]),
+  dashboard: () => Promise.all([loadSources(), loadRequests(), loadDeliveries({ scoped: false })]),
   idols: loadIdols,
   sources: () => Promise.all([loadSources(), loadIdols()]),
+  deliveries: () => Promise.all([loadDeliveries(), loadIdols()]),
   requests: loadRequests,
 };
 
@@ -495,10 +537,10 @@ function manualFetch(id) {
   }});
 }
 
-function deliveryDetail(id) {
-  const item = state.deliveries.find((delivery) => delivery.id === id);
+function deliveryDetail(key) {
+  const item = state.deliveries.find((delivery) => deliveryKey(delivery) === key);
   if (!item) return;
-  openDrawer({ eyebrow: "投递详情", title: item.id, body: `<dl class="detail-list"><div><dt>用户标识</dt><dd>${safe(item.user)}<br /><small>管理端不展示 OpenID</small></dd></div><div><dt>idol</dt><dd>${safe(item.idol)}</dd></div><div><dt>动态编号</dt><dd>${safe(item.post)}</dd></div><div><dt>投递状态</dt><dd>${statusBadge(item.status)}</dd></div><div><dt>重试次数</dt><dd>${item.retries}</dd></div><div><dt>发送时间</dt><dd>${safe(item.sentAt)}</dd></div><div><dt>回访时间</dt><dd>${safe(item.openedAt)}</dd></div><div><dt>失败原因</dt><dd>${safe(item.reason)}</dd></div></dl><ol class="timeline"><li><strong>创建投递意图</strong><span>动态与 outbox 同事务写入</span></li><li><strong>Worker 领取任务</strong><span>额度预留成功</span></li><li><strong>调用微信接口</strong><span>${item.status === "success" ? "微信接口返回成功" : safe(item.reason)}</span></li>${item.openedAt !== "—" ? `<li><strong>用户回访</strong><span>${safe(item.openedAt)}</span></li>` : ""}</ol>` });
+  openDrawer({ eyebrow: "投递详情", title: item.postTitle || item.postId, body: `<dl class="detail-list"><div><dt>用户标识</dt><dd>${safe(item.userId)}<br /><small>内部用户 ID，管理端不展示 OpenID</small></dd></div><div><dt>idol</dt><dd>${safe(item.idolName)}（${safe(item.idolId)}）</dd></div><div><dt>动态编号</dt><dd>${safe(item.postId)}</dd></div><div><dt>投递状态</dt><dd>${statusBadge(item.status)}</dd></div><div><dt>尝试次数</dt><dd>${item.attemptCount}</dd></div><div><dt>错误码</dt><dd>${safe(item.errorCode || "—")}</dd></div><div><dt>创建时间</dt><dd>${timeText(item.createdAt)}</dd></div><div><dt>最近尝试</dt><dd>${timeText(item.attemptedAt)}</dd></div><div><dt>结束时间</dt><dd>${timeText(item.finishedAt)}</dd></div><div><dt>下次重试</dt><dd>${timeText(item.nextAttemptAt)}</dd></div><div><dt>回访次数</dt><dd>${item.openCount}</dd></div></dl>` });
 }
 
 function reviewRequest(id, approved) {
@@ -564,7 +606,7 @@ function handlePageClick(event) {
   if (!button) return;
   if (button.dataset.pageJump) return navigate(button.dataset.pageJump);
   if (button.dataset.toast) return showToast(button.dataset.toast);
-  if (button.dataset.deliveryFilter) { state.deliveryFilter = button.dataset.deliveryFilter; return renderPage({ focus: false }); }
+  if (button.dataset.deliveryFilter) { state.deliveryFilter = button.dataset.deliveryFilter; return void reload(); }
   if (button.dataset.requestFilter) { state.requestFilter = button.dataset.requestFilter; return void reload(); }
   const id = button.dataset.id;
   const actions = {
@@ -576,6 +618,7 @@ function handlePageClick(event) {
     "toggle-source": () => toggleSource(id),
     "manual-fetch": () => manualFetch(id),
     "delivery-detail": () => deliveryDetail(button.dataset.id),
+    "refresh-deliveries": () => void reload(),
     "approve-request": () => reviewRequest(id, true),
     "reject-request": () => reviewRequest(id, false),
     "request-detail": () => requestDetail(id),
@@ -589,6 +632,8 @@ function handlePageChange(event) {
   if (event.target.id === "idol-status") { state.idolStatus = event.target.value; renderPage({ focus: false }); }
   if (event.target.id === "source-status") { state.sourceStatus = event.target.value; void reload(); }
   if (event.target.id === "audit-result") { state.auditResult = event.target.value; renderPage({ focus: false }); }
+  if (event.target.id === "delivery-range") { state.deliveryRange = Number(event.target.value); void reload(); }
+  if (event.target.id === "delivery-idol") { state.deliveryIdol = event.target.value; void reload(); }
   if (event.target.id === "dashboard-range") showToast(`指标范围已切换为${event.target.value}`);
 }
 
