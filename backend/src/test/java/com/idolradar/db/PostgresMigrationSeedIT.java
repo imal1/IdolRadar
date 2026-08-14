@@ -532,7 +532,8 @@ class PostgresMigrationSeedIT {
                 jdbc,
                 new TransactionTemplate(new DataSourceTransactionManager(testDataSource)));
 
-        admin.updateIdol("idol-1", null, null, null, false, 1);
+        // 新插入的 idol version 默认为 0（见 V5 迁移），乐观锁的期望版本必须跟着写 0。
+        admin.updateIdol("idol-1", null, null, null, false, 0);
 
         // 停用只影响“新增”：候选名单与抓取立刻停止，已存在的守护关系一律保留，
         // 否则管理员一次停用就会静默清空用户的守护历史。

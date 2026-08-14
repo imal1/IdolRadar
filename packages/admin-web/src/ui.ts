@@ -107,7 +107,13 @@ export function openModal({ eyebrow = '管理操作', title, body, confirm = '�
   $('#modal-eyebrow').textContent = eyebrow;
   $('#modal-title').textContent = title;
   $('#modal-body').innerHTML = body;
-  $('#modal-footer').innerHTML = `<button class="button button--neutral" value="cancel" type="submit">取消</button><button class="button ${danger ? 'button--danger' : 'button--primary'}" id="modal-confirm" type="button">${confirm}</button>`;
+  $('#modal-footer').innerHTML = `<button class="button button--neutral" id="modal-cancel" type="button">取消</button><button class="button ${danger ? 'button--danger' : 'button--primary'}" id="modal-confirm" type="button">${confirm}</button>`;
+  // 关闭与取消都必须是 type="button" 并手动 close：留在 form method="dialog" 里的 submit 按钮会被
+  // 输入框里的回车触发隐式提交，弹窗直接关闭且绕过 onConfirm，管理员刚填的内容全部丢失。
+  // 关闭按钮是静态节点，用 onclick 赋值而不是 addEventListener，避免每次打开都叠加一个监听。
+  const dismiss = (): void => modal.close();
+  $<HTMLButtonElement>('#modal .modal__close').onclick = dismiss;
+  $<HTMLButtonElement>('#modal-cancel').onclick = dismiss;
   // onConfirm 可能是网络请求：期间禁用按钮防重复提交，返回 false 时保留已填内容。
   $('#modal-confirm').addEventListener('click', async (event) => {
     const button = event.currentTarget as HTMLButtonElement;
