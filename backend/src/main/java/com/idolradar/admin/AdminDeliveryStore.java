@@ -44,6 +44,9 @@ public class AdminDeliveryStore {
     /**
      * 按时间区间与 idol 查询投递明细、状态分布、失败原因与队列积压。
      *
+     * <p>可选筛选统一写成 {@code CAST(:param AS text) IS NULL OR col = :param}：PostgreSQL 无法从
+     * 裸占位符推断类型，不加 CAST 时传 null 会直接报 “could not determine data type of parameter”。
+     *
      * @param rangeHours 回看窗口小时数；null 取默认 24 小时，上限 30 天，避免一次扫全表
      */
     public Map<String, Object> listDeliveries(String idolId, String status, Integer rangeHours) {
@@ -61,8 +64,8 @@ public class AdminDeliveryStore {
                         JOIN idr_post p ON p.id = d.post_id
                         JOIN idr_idol i ON i.id = p.idol_id
                         WHERE d.created_at >= :since
-                          AND (:idolId IS NULL OR p.idol_id = :idolId)
-                          AND (:status IS NULL OR d.status = :status)
+                          AND (CAST(:idolId AS text) IS NULL OR p.idol_id = :idolId)
+                          AND (CAST(:status AS text) IS NULL OR d.status = :status)
                           AND (:stuckOnly = FALSE
                                OR (d.attempt_count >= :stuckAttempts AND d.status <> 'sent'))
                         ORDER BY d.created_at DESC, d.post_id ASC
@@ -100,7 +103,7 @@ public class AdminDeliveryStore {
                         SELECT d.status, COUNT(*)::integer AS total
                         FROM idr_notification_delivery d
                         JOIN idr_post p ON p.id = d.post_id
-                        WHERE d.created_at >= :since AND (:idolId IS NULL OR p.idol_id = :idolId)
+                        WHERE d.created_at >= :since AND (CAST(:idolId AS text) IS NULL OR p.idol_id = :idolId)
                         GROUP BY d.status
                         """)
                 .param("since", since)
@@ -118,7 +121,7 @@ public class AdminDeliveryStore {
                                )::integer AS opened
                         FROM idr_notification_delivery d
                         JOIN idr_post p ON p.id = d.post_id
-                        WHERE d.created_at >= :since AND (:idolId IS NULL OR p.idol_id = :idolId)
+                        WHERE d.created_at >= :since AND (CAST(:idolId AS text) IS NULL OR p.idol_id = :idolId)
                         """)
                 .param("since", since)
                 .param("idolId", idolId)
@@ -147,7 +150,7 @@ public class AdminDeliveryStore {
                         FROM idr_notification_delivery d
                         JOIN idr_post p ON p.id = d.post_id
                         WHERE d.created_at >= :since
-                          AND (:idolId IS NULL OR p.idol_id = :idolId)
+                          AND (CAST(:idolId AS text) IS NULL OR p.idol_id = :idolId)
                           AND d.status IN ('failed', 'retryable', 'uncertain')
                         GROUP BY 1 ORDER BY total DESC, 1 ASC LIMIT :limit
                         """)
@@ -176,7 +179,7 @@ public class AdminDeliveryStore {
         jdbc.sql("""
                         SELECT status, COUNT(*)::integer AS total
                         FROM idr_notification_outbox
-                        WHERE status <> 'completed' AND (:idolId IS NULL OR idol_id = :idolId)
+                        WHERE status <> 'completed' AND (CAST(:idolId AS text) IS NULL OR idol_id = :idolId)
                         GROUP BY status
                         """)
                 .param("idolId", idolId)
@@ -186,7 +189,7 @@ public class AdminDeliveryStore {
 
         OffsetDateTime oldest = jdbc.sql("""
                         SELECT MIN(created_at) AS oldest FROM idr_notification_outbox
-                        WHERE status <> 'completed' AND (:idolId IS NULL OR idol_id = :idolId)
+                        WHERE status <> 'completed' AND (CAST(:idolId AS text) IS NULL OR idol_id = :idolId)
                         """)
                 .param("idolId", idolId)
                 .query((resultSet, rowNumber) -> resultSet.getObject("oldest", OffsetDateTime.class))

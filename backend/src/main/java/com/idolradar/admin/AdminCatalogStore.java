@@ -58,9 +58,9 @@ public class AdminCatalogStore {
                         SELECT * FROM (
                           SELECT s.*, i.name AS idol_name, %s AS health
                           FROM idr_source s JOIN idr_idol i ON i.id = s.idol_id
-                          WHERE (:idolId IS NULL OR s.idol_id = :idolId)
+                          WHERE (CAST(:idolId AS text) IS NULL OR s.idol_id = :idolId)
                         ) rows
-                        WHERE (:health IS NULL OR rows.health = :health)
+                        WHERE (CAST(:health AS text) IS NULL OR rows.health = :health)
                         ORDER BY rows.enabled DESC, rows.consecutive_failures DESC,
                                  rows.idol_name ASC, rows.id ASC
                         LIMIT :limit
@@ -80,7 +80,7 @@ public class AdminCatalogStore {
         jdbc.sql("""
                         SELECT %s AS health, COUNT(*)::integer AS total
                         FROM idr_source s
-                        WHERE (:idolId IS NULL OR s.idol_id = :idolId)
+                        WHERE (CAST(:idolId AS text) IS NULL OR s.idol_id = :idolId)
                         GROUP BY 1
                         """.formatted(healthExpression()))
                 .param("idolId", blankToNull(idolId))
@@ -262,7 +262,7 @@ public class AdminCatalogStore {
                         FROM idr_idol_request r
                         LEFT JOIN idr_idol_request_supporter s ON s.request_id = r.id
                         LEFT JOIN idr_admin_account a ON a.id = r.reviewed_by
-                        WHERE (:status IS NULL OR r.status = :status)
+                        WHERE (CAST(:status AS text) IS NULL OR r.status = :status)
                         GROUP BY r.id, a.username
                         ORDER BY COUNT(s.user_id) DESC, r.created_at DESC
                         LIMIT :limit
