@@ -22,7 +22,9 @@ public class WebMvcConfiguration implements WebMvcConfigurer {
             "/v1/feed",
             "/v1/idols",
             "/v1/me/idol",
-            "/v1/me/subscriptions");
+            "/v1/me/subscriptions",
+            "/v1/idol-requests",
+            "/v1/me/idol-requests");
 
     private final AuthInterceptor authInterceptor;
     private final AdminAuthInterceptor adminAuthInterceptor;

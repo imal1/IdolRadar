@@ -78,6 +78,19 @@ public class ApiController {
                 identity.openId(), request.accepted(), properties.subscribeTemplateId()));
     }
 
+    @PostMapping("/v1/idol-requests")
+    public ApiResponse<Map<String, Object>> submitIdolRequest(
+            @RequestAttribute(AuthInterceptor.IDENTITY_ATTRIBUTE) AuthService.Identity identity,
+            @Valid @RequestBody IdolRequest request) {
+        return ApiResponse.ok(store.submitIdolRequest(identity.openId(), request.name(), request.note()));
+    }
+
+    @GetMapping("/v1/me/idol-requests")
+    public ApiResponse<Map<String, Object>> myIdolRequests(
+            @RequestAttribute(AuthInterceptor.IDENTITY_ATTRIBUTE) AuthService.Identity identity) {
+        return ApiResponse.ok(store.listMyIdolRequests(identity.openId()));
+    }
+
     public record LoginRequest(@NotBlank @Size(min = 4, max = 512) String code) {
     }
 
@@ -85,5 +98,10 @@ public class ApiController {
     }
 
     public record SubscriptionRequest(@NotNull @AssertTrue Boolean accepted) {
+    }
+
+    public record IdolRequest(
+            @NotBlank @Size(max = 64) String name,
+            @Size(max = 200) String note) {
     }
 }

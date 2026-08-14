@@ -6,6 +6,7 @@
 - `backend/`：Spring Boot 后端源码与镜像 `Dockerfile`。
 - `compose.yaml`、根目录 `.env`：服务器统一 Docker 编排；HTTPS 入口由服务器现有宿主机 Nginx 管理。所有环境变量集中在根目录 `.env`，所有 `docker compose` 命令都在项目根目录执行。
 - `rsshub/`：指向 `imal1/RSSHub` 的源码子模块，用于开发、调试、测试和构建自定义 route；官方 `DIYgod/RSSHub` 作为其上游同步来源。
+- `packages/admin-web/`：管理端前端源码（Vite + TypeScript）。`pnpm run admin:dev` 起 dev server（`/admin/v1` 代理到本机 8080），`pnpm run admin:build` 把产物写进 `backend/src/main/resources/static/admin/`（已 gitignore）。产物随 backend 镜像发布、与 API 同源，因此 `docker build` 前必须先构建前端；取舍见 `docs/adr/0003-admin-web-separate-source-same-origin-runtime.md`。
 - `packages/test-utils/`：跨测试项目共享的纯 Node.js fixture/path 工具，不包含浏览器或小程序驱动。
 - `tests/miniprogram-e2e/`：Vitest 测试编排 + 官方 `miniprogram-automator` 驱动；小程序 UI 调试不得改用 Playwright。
 - `database/`：发布 seed；根 `compose.yaml` 用 `./database` 只读挂载。

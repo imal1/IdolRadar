@@ -22,7 +22,6 @@ import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuil
 import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.core5.http.HttpHeaders;
 import org.apache.hc.core5.util.Timeout;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
@@ -31,8 +30,8 @@ import org.springframework.stereotype.Component;
  * <p>每次跳转均重新校验并解析目标；HTTP 连接仅使用已校验 DNS 结果，
  * 防止校验与连接之间发生 DNS 重绑定，同时保留原主机名供 TLS/Host 校验。
  */
+// 抓取链路组件不再按 app.mode 隔离：管理端手动验证也要走同一套下载与解析，两处实现会立刻分叉。
 @Component
-@ConditionalOnProperty(name = "app.mode", havingValue = "worker")
 public class ApacheFeedDownloader implements FeedDownloader {
     private static final int BUFFER_SIZE = 8192;
 

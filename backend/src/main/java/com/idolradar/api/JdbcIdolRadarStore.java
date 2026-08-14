@@ -26,6 +26,8 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
     private static final int PAGE_SIZE = 20;
     private static final int MAX_ID_LENGTH = 128;
     private static final int MAX_SUBSCRIBE_QUOTA = 100;
+    private static final int MAX_REQUEST_NAME_LENGTH = 64;
+    private static final int MAX_REQUEST_NOTE_LENGTH = 200;
     private static final ZoneId SHANGHAI = ZoneId.of("Asia/Shanghai");
 
     private final JdbcClient jdbc;
@@ -201,6 +203,138 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
         result.put("subscribeQuota", updated.get().subscribeQuota());
         result.put("subscribedAt", format(updated.get().subscribedAt()));
         return result;
+    }
+
+    /**
+     * 提交想蹲的 idol；同名申请聚合为一条，重复提交只增加支持人数。
+     *
+     * <p>聚合的意义是让审核看到真实需求量，因此按规范化名去重而不是按用户去重：
+     * 同一个人重复提交不会灌水，不同的人提交同一个名字会累加。
+     */
+    @Override
+    @Transactional
+    public Map<String, Object> submitIdolRequest(String openId, String displayName, String note) {
+        UserRow user = requireUser(openId);
+        String name = requestText(displayName, MAX_REQUEST_NAME_LENGTH, "申请名称");
+        String normalized = normalizeRequestName(name);
+        if (normalized.isEmpty()) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "申请名称无效");
+        }
+        String comment = note == null ? "" : requestText(note, MAX_REQUEST_NOTE_LENGTH, "补充说明");
+
+        // 已在目录里的 idol 不需要申请，直接引导用户去选，比让他等审核诚实。
+        // 比对必须与 normalizeRequestName 一致地压缩空白，否则名字里有连续空格的 idol 永远匹配不上。
+        boolean alreadyListed = jdbc.sql(
+                        "SELECT COUNT(*)::integer FROM idr_idol WHERE enabled = TRUE "
+                                + "AND lower(btrim(regexp_replace(name, '\\s+', ' ', 'g'))) = :name")
+                .param("name", normalized)
+                .query(Integer.class)
+                .single() > 0;
+        if (alreadyListed) {
+            throw new AppException(HttpStatus.CONFLICT, "IDOL_ALREADY_LISTED", "该 idol 已经可以直接选择");
+        }
+
+        // 名称唯一约束覆盖全部状态，因此已审核的同名申请要给出明确结论，而不是静默新建一条。
+        Optional<RequestRow> existing = findRequestByNormalizedName(normalized);
+        if (existing.isPresent() && !"pending".equals(existing.get().status())) {
+            throw new AppException(
+                    HttpStatus.CONFLICT,
+                    "approved".equals(existing.get().status()) ? "REQUEST_ALREADY_APPROVED" : "REQUEST_REJECTED",
+                    "approved".equals(existing.get().status()) ? "该申请已通过，稍后即可选择" : "该申请已被驳回");
+        }
+
+        UUID requestId = existing.map(RequestRow::id).orElseGet(() -> jdbc.sql(
+                        "INSERT INTO idr_idol_request (normalized_name, display_name, note) "
+                                + "VALUES (:normalized, :displayName, :note) RETURNING id")
+                .param("normalized", normalized)
+                .param("displayName", name)
+                .param("note", comment)
+                .query(UUID.class)
+                .single());
+        jdbc.sql("INSERT INTO idr_idol_request_supporter (request_id, user_id) VALUES (:requestId, :userId) "
+                        + "ON CONFLICT (request_id, user_id) DO NOTHING")
+                .param("requestId", requestId)
+                .param("userId", user.id())
+                .update();
+        return serializeRequest(findRequestById(requestId).orElseThrow(), supporterCount(requestId));
+    }
+
+    @Override
+    public Map<String, Object> listMyIdolRequests(String openId) {
+        UserRow user = requireUser(openId);
+        List<Map<String, Object>> requests = jdbc.sql(
+                        "SELECT r.*, "
+                                + "(SELECT COUNT(*)::integer FROM idr_idol_request_supporter c "
+                                + "WHERE c.request_id = r.id) AS supporter_count "
+                                + "FROM idr_idol_request r "
+                                + "JOIN idr_idol_request_supporter s ON s.request_id = r.id "
+                                + "WHERE s.user_id = :userId ORDER BY r.created_at DESC LIMIT 50")
+                .param("userId", user.id())
+                .query((resultSet, rowNumber) ->
+                        serializeRequest(mapRequest(resultSet), resultSet.getInt("supporter_count")))
+                .list();
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("requests", requests);
+        return result;
+    }
+
+    private Optional<RequestRow> findRequestByNormalizedName(String normalizedName) {
+        return jdbc.sql("SELECT * FROM idr_idol_request WHERE normalized_name = :name")
+                .param("name", normalizedName)
+                .query((resultSet, rowNumber) -> mapRequest(resultSet))
+                .optional();
+    }
+
+    private Optional<RequestRow> findRequestById(UUID requestId) {
+        return jdbc.sql("SELECT * FROM idr_idol_request WHERE id = :id")
+                .param("id", requestId)
+                .query((resultSet, rowNumber) -> mapRequest(resultSet))
+                .optional();
+    }
+
+    private int supporterCount(UUID requestId) {
+        return jdbc.sql("SELECT COUNT(*)::integer FROM idr_idol_request_supporter WHERE request_id = :id")
+                .param("id", requestId)
+                .query(Integer.class)
+                .single();
+    }
+
+    private static RequestRow mapRequest(ResultSet resultSet) throws SQLException {
+        return new RequestRow(
+                resultSet.getObject("id", UUID.class),
+                resultSet.getString("display_name"),
+                resultSet.getString("status"),
+                resultSet.getString("review_note"),
+                resultSet.getString("approved_idol_id"),
+                instant(resultSet, "created_at"),
+                instant(resultSet, "reviewed_at"));
+    }
+
+    private static Map<String, Object> serializeRequest(RequestRow request, int supporterCount) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("_id", request.id().toString());
+        result.put("displayName", request.displayName());
+        result.put("status", request.status());
+        result.put("reviewNote", request.reviewNote());
+        result.put("approvedIdolId", request.approvedIdolId());
+        result.put("supporterCount", supporterCount);
+        result.put("createdAt", format(request.createdAt()));
+        result.put("reviewedAt", format(request.reviewedAt()));
+        return result;
+    }
+
+    /** 规范化只做大小写与空白归一：过度归一会把不同的名字合并成一条申请。 */
+    static String normalizeRequestName(String value) {
+        return value.trim().toLowerCase(java.util.Locale.ROOT).replaceAll("\\s+", " ");
+    }
+
+    private static String requestText(String value, int maxLength, String fieldName) {
+        String normalized = value == null ? "" : value.trim();
+        if (normalized.isEmpty() || normalized.codePointCount(0, normalized.length()) > maxLength
+                || hasControlCharacter(normalized)) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", fieldName + "无效");
+        }
+        return normalized;
     }
 
     private UserRow requireUser(String openId) {
@@ -399,6 +533,16 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
             String link,
             Instant publishedAt,
             Instant fetchedAt) {
+    }
+
+    private record RequestRow(
+            UUID id,
+            String displayName,
+            String status,
+            String reviewNote,
+            String approvedIdolId,
+            Instant createdAt,
+            Instant reviewedAt) {
     }
 
     private record FeedPage(List<Map<String, Object>> posts, boolean hasMore, String nextCursor) {

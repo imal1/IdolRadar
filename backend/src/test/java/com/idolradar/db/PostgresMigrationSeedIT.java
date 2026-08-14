@@ -8,7 +8,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.idolradar.admin.AdminAuditRepository;
 import com.idolradar.admin.JdbcAdminAuditRepository;
+import com.idolradar.admin.AdminCatalogStore;
+import com.idolradar.admin.AdminDeliveryStore;
 import com.idolradar.admin.JdbcAdminAuthRepository;
+import com.idolradar.api.AppException;
+import com.idolradar.api.CursorCodec;
+import com.idolradar.api.JdbcIdolRadarStore;
 import com.idolradar.seed.SeedProperties;
 import com.idolradar.seed.SeedService;
 import com.idolradar.worker.WorkerModels;
@@ -19,6 +24,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
@@ -504,6 +510,110 @@ class PostgresMigrationSeedIT {
                 "SELECT count(*) FROM idr_admin_session WHERE admin_id = ? AND revoked_at IS NOT NULL",
                 Long.class,
                 adminId));
+    }
+
+    @Test
+    @Order(9)
+    void disablingIdolKeepsExistingGuardsButStopsCatalogAndFetching() {
+        jdbc.update("INSERT INTO idr_idol (id, name) VALUES ('idol-1', '示例')");
+        jdbc.update("INSERT INTO idr_source (id, idol_id, rss_url, display_name) "
+                + "VALUES ('source-1', 'idol-1', 'https://example.com/feed.xml', '示例源')");
+        UUID userId = jdbc.queryForObject(
+                "INSERT INTO idr_user (openid, idol_id, guarding_since) "
+                        + "VALUES ('openid-1', 'idol-1', now()) RETURNING id",
+                UUID.class);
+        jdbc.update("INSERT INTO idr_user_guard (user_id, idol_id, guarding_since) VALUES (?, 'idol-1', now())",
+                userId);
+
+        JdbcClient client = JdbcClient.create(testDataSource);
+        AdminCatalogStore admin = new AdminCatalogStore(client);
+        JdbcIdolRadarStore api = new JdbcIdolRadarStore(client, new CursorCodec());
+        WorkerStore worker = new WorkerStore(
+                jdbc,
+                new TransactionTemplate(new DataSourceTransactionManager(testDataSource)));
+
+        // 新插入的 idol version 默认为 0（见 V5 迁移），乐观锁的期望版本必须跟着写 0。
+        admin.updateIdol("idol-1", null, null, null, false, 0);
+
+        // 停用只影响“新增”：候选名单与抓取立刻停止，已存在的守护关系一律保留，
+        // 否则管理员一次停用就会静默清空用户的守护历史。
+        assertEquals(1L, jdbc.queryForObject(
+                "SELECT count(*) FROM idr_user_guard WHERE user_id = ? AND idol_id = 'idol-1'",
+                Long.class,
+                userId));
+        assertTrue(worker.loadEnabledSources().isEmpty());
+
+        Map<String, Object> catalog = api.listIdols("openid-1");
+        assertTrue(((List<?>) catalog.get("idols")).isEmpty());
+        assertEquals("idol-1", catalog.get("currentIdolId"));
+        AppException rejected = assertThrows(
+                AppException.class, () -> api.setIdol("openid-1", "idol-1"));
+        assertEquals("IDOL_NOT_FOUND", rejected.code());
+    }
+
+    @Test
+    @Order(10)
+    void deliveryDashboardAggregatesStatusesFailuresAndQueueBacklog() {
+        jdbc.update("INSERT INTO idr_idol (id, name) VALUES ('idol-1', '示例'), ('idol-2', '其他')");
+        jdbc.update("INSERT INTO idr_source (id, idol_id, rss_url, display_name) "
+                + "VALUES ('source-1', 'idol-1', 'https://example.com/feed.xml', '示例源')");
+        jdbc.update("INSERT INTO idr_post (id, idol_id, source_id, title, link, published_at, fetched_at) "
+                + "VALUES ('post-1', 'idol-1', 'source-1', '动态一', 'https://example.com/1', now(), now())");
+        UUID userId = jdbc.queryForObject(
+                "INSERT INTO idr_user (openid, idol_id) VALUES ('openid-1', 'idol-1') RETURNING id",
+                UUID.class);
+        UUID otherUserId = jdbc.queryForObject(
+                "INSERT INTO idr_user (openid, idol_id) VALUES ('openid-2', 'idol-1') RETURNING id",
+                UUID.class);
+        UUID thirdUserId = jdbc.queryForObject(
+                "INSERT INTO idr_user (openid, idol_id) VALUES ('openid-3', 'idol-1') RETURNING id",
+                UUID.class);
+        jdbc.update("INSERT INTO idr_notification_delivery "
+                + "(post_id, user_id, status, attempt_count, first_opened_at, last_opened_at, open_count) "
+                + "VALUES ('post-1', ?, 'sent', 1, now(), now(), 2)", userId);
+        jdbc.update("INSERT INTO idr_notification_delivery "
+                + "(post_id, user_id, status, error_code, attempt_count) "
+                + "VALUES ('post-1', ?, 'failed', 'WECHAT_43101', 1)", otherUserId);
+        // 尝试 4 次仍未送达：这正是「反复重试」筛选要捞出来的那一条。
+        jdbc.update("INSERT INTO idr_notification_delivery "
+                + "(post_id, user_id, status, error_code, attempt_count) "
+                + "VALUES ('post-1', ?, 'retryable', 'WECHAT_45009', 4)", thirdUserId);
+        jdbc.update("INSERT INTO idr_notification_outbox (idol_id, post_id, status, created_at) "
+                + "VALUES ('idol-1', 'post-1', 'pending', now() - interval '2 hours')");
+
+        AdminDeliveryStore store = new AdminDeliveryStore(JdbcClient.create(testDataSource));
+        Map<String, Object> board = store.listDeliveries(null, null, 24);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> summary = (Map<String, Object>) board.get("summary");
+        assertEquals(3, summary.get("total"));
+        assertEquals(1, summary.get("sent"));
+        assertEquals(1, summary.get("stuck"));
+        // 成功率分母只算已出结论的投递（sent + failed + uncertain），重试中的不计入。
+        assertEquals(50.0, summary.get("successRate"));
+        assertEquals(100.0, summary.get("openRate"));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> failures = (List<Map<String, Object>>) board.get("failures");
+        assertEquals(2, failures.size());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> queue = (Map<String, Object>) board.get("queue");
+        assertEquals(1, queue.get("backlog"));
+        assertTrue(queue.get("oldestQueuedAt") != null);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> stuck =
+                (List<Map<String, Object>>) store.listDeliveries(null, "stuck", 24).get("deliveries");
+        assertEquals(1, stuck.size());
+        assertEquals(thirdUserId.toString(), stuck.get(0).get("userId"));
+
+        // idol 维度筛选：另一个 idol 下没有任何投递与积压。
+        @SuppressWarnings("unchecked")
+        Map<String, Object> otherIdol = (Map<String, Object>) store.listDeliveries("idol-2", null, 24).get("summary");
+        assertEquals(0, otherIdol.get("total"));
+        assertThrows(AppException.class, () -> store.listDeliveries(null, "nonsense", 24));
+        assertThrows(AppException.class, () -> store.listDeliveries(null, null, 24 * 31));
     }
 
     private DatabaseCredentials databaseCredentials() {

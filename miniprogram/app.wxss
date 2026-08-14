@@ -121,6 +121,7 @@ button::after {
 .night .feed-title,
 .night .picker-title,
 .night .picker-name,
+.night .my-request-name,
 .night .profile-name,
 .night .guard-name,
 .night .reminder-title,
@@ -151,6 +152,8 @@ button::after {
 .night .card-label,
 .night .feed-footer,
 .night .picker-footnote,
+.night .my-requests-title,
+.night .my-request-note,
 .night .about-value,
 .night .subscription-tip,
 .night .slogan {
@@ -169,6 +172,7 @@ button::after {
 .night .feed-list,
 .night .search-box,
 .night .picker-card,
+.night .my-requests,
 .night .no-result,
 .night .me-card,
 .night .about-list {
@@ -188,6 +192,10 @@ button::after {
 .night .feed-item,
 .night .about-row {
   border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+
+.night .my-request {
+  border-top-color: rgba(255, 255, 255, 0.06);
 }
 
 /* Gradient header cards */

@@ -10,7 +10,9 @@ var ACTIONS = {
   getFeed: { method: 'GET', path: '/v1/feed', query: ['cursor'] },
   listIdols: { method: 'GET', path: '/v1/idols' },
   setIdol: { method: 'PUT', path: '/v1/me/idol' },
-  recordSubscription: { method: 'POST', path: '/v1/me/subscriptions' }
+  recordSubscription: { method: 'POST', path: '/v1/me/subscriptions' },
+  submitIdolRequest: { method: 'POST', path: '/v1/idol-requests' },
+  listMyIdolRequests: { method: 'GET', path: '/v1/me/idol-requests' }
 };
 
 function createError(detail, fallbackCode) {

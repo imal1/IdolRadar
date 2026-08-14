@@ -6,12 +6,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /** worker 运行参数与安全上限；每次运行前统一校验。 */
+// 抓取链路组件不再按 app.mode 隔离：管理端手动验证也要走同一套下载与解析，两处实现会立刻分叉。
 @Component
-@ConditionalOnProperty(name = "app.mode", havingValue = "worker")
 @ConfigurationProperties(prefix = "idolradar.worker")
 public class WorkerProperties {
     private String wechatAppId = "";

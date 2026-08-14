@@ -36,11 +36,12 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
+      # 直接跑 pnpm run check：本地与 CI 共用同一条命令，避免两边的检查项各自漂移。
+      # 这一步也顺带把管理端产物构建进 backend 静态资源目录，是下面镜像构建的前置条件。
       - name: Mini program contract and release checks
         run: |
           pnpm install --frozen-lockfile --ignore-scripts
-          pnpm test
-          pnpm run validate
+          pnpm run check
 
       - name: Production image build
         run: docker build --tag idolradar-ci backend

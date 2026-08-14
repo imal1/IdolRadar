@@ -38,6 +38,23 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      # 管理端源码在 packages/admin-web，而镜像构建上下文是 ./backend：
+      # 必须先把产物构建进 backend 静态资源目录，镜像里的 /admin/ 才有内容。
+      - name: Build admin frontend into backend static resources
+        run: |
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm run admin:build
+
       - name: Resolve image names
         id: images
         shell: bash

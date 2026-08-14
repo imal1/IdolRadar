@@ -133,6 +133,43 @@ class ApiControllerTest {
     }
 
     @Test
+    void idolRequestSubmissionIsAuthenticatedAndLengthLimited() throws Exception {
+        AuthService.Identity identity = new AuthService.Identity(
+                UUID.fromString("815bd2ca-cf30-4b4e-8a91-5e90f8fe8750"),
+                "openid-1",
+                Instant.now().plusSeconds(3600));
+        when(auth.authenticate("Bearer valid-token")).thenReturn(identity);
+        when(auth.authenticate(null)).thenThrow(new com.idolradar.api.AppException(
+                org.springframework.http.HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "登录已失效"));
+        when(store.submitIdolRequest("openid-1", "新偶像", "微博很活跃"))
+                .thenReturn(Map.of("status", "pending", "supporterCount", 3));
+        when(store.listMyIdolRequests("openid-1")).thenReturn(Map.of("requests", List.of()));
+
+        protectedMvc.perform(post("/v1/idol-requests")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"新偶像\"}"))
+                .andExpect(status().isUnauthorized());
+        protectedMvc.perform(post("/v1/idol-requests")
+                        .header("Authorization", "Bearer valid-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"" + "长".repeat(65) + "\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_INPUT"));
+        protectedMvc.perform(post("/v1/idol-requests")
+                        .header("Authorization", "Bearer valid-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"新偶像\",\"note\":\"微博很活跃\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.supporterCount").value(3));
+        protectedMvc.perform(get("/v1/me/idol-requests")
+                        .header("Authorization", "Bearer valid-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.requests").isArray());
+
+        verify(store).submitIdolRequest("openid-1", "新偶像", "微博很活跃");
+    }
+
+    @Test
     void malformedJsonKeepsErrorEnvelope() throws Exception {
         publicMvc.perform(post("/v1/auth/wechat/login")
                         .contentType(MediaType.APPLICATION_JSON)

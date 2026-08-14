@@ -37,6 +37,10 @@ public class RateLimitInterceptor implements HandlerInterceptor {
         if ("/v1/me/subscriptions".equals(path)) {
             return new Limit("subscription", properties.subscriptionLimit());
         }
+        // 申请提交会产生人工审核成本，沿用订阅的收紧额度，避免单个用户刷满审核队列。
+        if ("/v1/idol-requests".equals(path) && "POST".equals(request.getMethod())) {
+            return new Limit("idol-request", properties.subscriptionLimit());
+        }
         return new Limit("api", properties.defaultLimit());
     }
 
