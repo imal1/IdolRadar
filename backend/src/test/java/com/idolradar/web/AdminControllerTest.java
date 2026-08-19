@@ -75,6 +75,20 @@ class AdminControllerTest {
     }
 
     @Test
+    void shortPasswordReachesCredentialCheckInsteadOfBeingRejectedAsBadRequest() throws Exception {
+        when(auth.login("ops-admin", "abc123")).thenThrow(
+                new AppException(HttpStatus.UNAUTHORIZED, "ADMIN_UNAUTHORIZED", "管理员登录已失效，请重新登录"));
+
+        // 口令下限只在创建时校验；登录必须走到验密并返回 401，而不是 400 INVALID_INPUT。
+        publicMvc.perform(post("/admin/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"ops-admin\",\"password\":\"abc123\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("ADMIN_UNAUTHORIZED"));
+        verify(auth).login("ops-admin", "abc123");
+    }
+
+    @Test
     void missingOrWechatUserTokenCannotReadAdminRoute() throws Exception {
         when(auth.authenticate(null)).thenThrow(unauthorized());
         String userToken = "u".repeat(43);

@@ -55,8 +55,11 @@ public class AdminController {
             @NotBlank
             @Pattern(regexp = "^[A-Za-z0-9._-]{3,64}$")
             String username,
+            // 只校验上限：口令长度下限属于创建口令时的策略（见 AdminAuthService.bootstrap），
+            // 在登录接口重复断言会把不满足现行策略的既有账号挡在验密之前，
+            // 且返回 400 而非 401，等于告诉调用方“这个口令没进到比对环节”。
             @NotBlank
-            @Size(min = 12, max = 256)
+            @Size(max = 256)
             String password) {
     }
 }

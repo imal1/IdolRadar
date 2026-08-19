@@ -17,6 +17,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Component
 public class SecurityHeadersFilter extends OncePerRequestFilter {
     private static final Pattern SAFE_REQUEST_ID = Pattern.compile("^[A-Za-z0-9._-]{8,64}$");
+    /** Vite 只把带内容指纹的产物写进这个目录；入口 index.html 不在其中。 */
+    private static final String FINGERPRINTED_ASSET_PREFIX = "/admin/assets/";
 
     @Override
     protected void doFilterInternal(
@@ -34,7 +36,15 @@ public class SecurityHeadersFilter extends OncePerRequestFilter {
             response.setHeader("X-Content-Type-Options", "nosniff");
             response.setHeader("X-Frame-Options", "DENY");
             response.setHeader("Referrer-Policy", "no-referrer");
-            response.setHeader("Cache-Control", "no-store");
+            // 管理后台与业务接口都不应进入搜索引擎索引。
+            response.setHeader("X-Robots-Tag", "noindex, nofollow");
+            // 指纹产物改名即换 URL，可长缓存；入口 HTML 必须不缓存，
+            // 否则发版后浏览器会拿旧 HTML 去请求已删除的旧指纹资源，表现为间歇性白屏。
+            response.setHeader(
+                    "Cache-Control",
+                    request.getRequestURI().startsWith(FINGERPRINTED_ASSET_PREFIX)
+                            ? "public, max-age=31536000, immutable"
+                            : "no-store");
             // 管理页图表需要动态内联样式；脚本仍严格限制为同源文件，禁止内联执行。
             response.setHeader("Content-Security-Policy", "default-src 'none'; script-src 'self'; "
                     + "style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; "

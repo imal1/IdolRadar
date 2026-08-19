@@ -86,6 +86,47 @@ docker compose up -d --force-recreate app worker
 宿主机 Nginx 保持监听 `80/443`，将 `app.imali.top` 反向代理到
 `http://127.0.0.1:8080`。证书与 Nginx 配置不由本项目 Compose 修改。
 
+### 3.2 管理端公网入口
+
+管理端与 `/admin/v1/**` 同源，随 backend 镜像发布，不是独立站点，也不需要 CORS
+（取舍见 `docs/adr/0003-admin-web-separate-source-same-origin-runtime.md`）。
+仓库提供 `deploy/nginx/admin.conf` 范本，**不会被 Compose 或 CI 自动部署**，需人工套用：
+
+```bash
+sudo mkdir -p /etc/nginx/idolradar
+sudo cp deploy/nginx/admin.conf /etc/nginx/idolradar/admin.conf
+# 在现有 443 server 块内加一行：include /etc/nginx/idolradar/admin.conf;
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+安全响应头由后端 `SecurityHeadersFilter` 统一下发，Nginx 不重复设置——同一份 CSP
+写在两处必然漂移，漂移后的症状是管理页白屏。若外层 `http`/`server` 块已有全局
+`add_header`，反代响应会出现两条互相冲突的同名头，需要删掉全局那条，
+或在该 `location` 内用 `proxy_hide_header` 去掉后端那条。
+
+套用后验证响应头与缓存策略确实生效：
+
+```bash
+# 入口路径：/admin 经 Nginx 会 301 到 /admin/，Location 必须是相对路径，
+# 出现 http:// 或内部端口说明 absolute_redirect off 没生效
+curl -sI https://app.imali.top/admin | grep -i '^location'
+curl -sL -o /dev/null -w '%{url_effective} %{http_code}\n' https://app.imali.top/admin
+
+curl -sI https://app.imali.top/admin/ | grep -iE \
+  'content-security-policy|x-frame-options|referrer-policy|x-content-type-options|x-robots-tag|cache-control'
+# 指纹产物路径从入口 HTML 里取
+curl -sI "https://app.imali.top$(curl -s https://app.imali.top/admin/ \
+  | grep -o '/admin/assets/[^\"]*\.js' | head -1)" | grep -i cache-control
+```
+
+预期：入口 HTML 为 `Cache-Control: no-store`、`X-Frame-Options: DENY`、
+`X-Robots-Tag: noindex, nofollow`，CSP 含 `default-src 'none'` 与 `frame-ancestors 'none'`；
+`/admin/assets/` 下的指纹产物为 `Cache-Control: public, max-age=31536000, immutable`。
+指纹资源改名即换 URL，长缓存不会造成发版错配；入口 HTML 不缓存，避免旧 HTML 请求已删除的旧资源。
+
+本版不加 IP allowlist：管理员没有固定出口 IP，allowlist 会退化成一个天天要开的临时口子。
+访问控制依赖应用层管理员登录（见 5.1）。
+
 ## 4. GitHub Actions 发布部署
 
 服务器部署需要在 GitHub `production` Environment 中配置：
