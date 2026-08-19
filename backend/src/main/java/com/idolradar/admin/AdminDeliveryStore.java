@@ -193,7 +193,10 @@ public class AdminDeliveryStore {
                         """)
                 .param("idolId", idolId)
                 .query((resultSet, rowNumber) -> resultSet.getObject("oldest", OffsetDateTime.class))
-                .single();
+                // 队列为空时 MIN() 仍返回一行、值为 NULL，single() 会拒绝 null 结果；
+                // 按某个无积压的 idol 筛选是正常查询，不能让看板 500。
+                .optional()
+                .orElse(null);
 
         queue.put("backlog", queue.values().stream().mapToInt(value -> (int) value).sum());
         queue.put("oldestQueuedAt", oldest);
