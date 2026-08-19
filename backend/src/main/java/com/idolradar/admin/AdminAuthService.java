@@ -125,8 +125,8 @@ public class AdminAuthService {
             byte[] salt = new byte[PASSWORD_SALT_BYTES];
             secureRandom.nextBytes(salt);
             String passwordHash = encodePassword(password, salt, PASSWORD_ITERATIONS);
-            UUID adminId = repository.createAdmin(username, passwordHash);
-            return new BootstrapResult(adminId, username);
+            AdminAuthRepository.CreatedAdmin created = repository.createAdmin(username, passwordHash);
+            return new BootstrapResult(created.adminId(), username, created.created());
         } finally {
             Arrays.fill(password, '\0');
         }
@@ -194,6 +194,7 @@ public class AdminAuthService {
         }
     }
 
-    public record BootstrapResult(UUID adminId, String username) {
+    /** created 为 false 表示用户名已存在，本次执行未创建也未修改任何凭据。 */
+    public record BootstrapResult(UUID adminId, String username, boolean created) {
     }
 }

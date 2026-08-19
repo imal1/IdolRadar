@@ -71,6 +71,24 @@ class AdminAuthServiceTest {
         assertTrue(repository.sessionRevoked);
     }
 
+    @Test
+    void repeatedBootstrapKeepsExistingCredentialAndReportsNotCreated() {
+        FakeRepository repository = new FakeRepository();
+        AdminAuthService service = new AdminAuthService(
+                repository, new AdminProperties(Duration.ofHours(12)), new SecureRandom());
+
+        AdminAuthService.BootstrapResult first = service.bootstrap("ops-admin", PASSWORD);
+        String storedHash = repository.passwordHash;
+        AdminAuthService.BootstrapResult second = service.bootstrap("ops-admin", "AnotherAdmin!2026");
+
+        assertTrue(first.created());
+        assertFalse(second.created());
+        assertEquals(first.adminId(), second.adminId());
+        // 重复执行不得改写口令，否则一次误操作就换掉线上凭据。
+        assertEquals(storedHash, repository.passwordHash);
+        assertThrows(AppException.class, () -> service.login("ops-admin", "AnotherAdmin!2026"));
+    }
+
     private static final class FakeRepository implements AdminAuthRepository {
         private String username;
         private String passwordHash;
@@ -114,11 +132,14 @@ class AdminAuthServiceTest {
         }
 
         @Override
-        public UUID createAdmin(String username, String passwordHash) {
+        public CreatedAdmin createAdmin(String username, String passwordHash) {
+            if (username.equals(this.username)) {
+                return new CreatedAdmin(ADMIN_ID, false);
+            }
             this.username = username;
             this.passwordHash = passwordHash;
             enabled = true;
-            return ADMIN_ID;
+            return new CreatedAdmin(ADMIN_ID, true);
         }
     }
 }

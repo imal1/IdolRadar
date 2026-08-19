@@ -11,6 +11,7 @@ import org.springframework.boot.jackson.autoconfigure.JsonMapperBuilderCustomize
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
+import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /** API 拦截器顺序与 JSON 输入策略的集中配置。 */
@@ -49,6 +50,15 @@ public class WebMvcConfiguration implements WebMvcConfigurer {
     JsonMapperBuilderCustomizer rejectUnknownJsonFields() {
         // 客户端字段拼错时立即报错，避免“请求成功但字段被静默忽略”。
         return builder -> builder.enable(tools.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+    }
+
+    @Override
+    public void addViewControllers(ViewControllerRegistry registry) {
+        // 静态资源处理器只为根路径解析欢迎页，不解析子目录索引，因此 /admin 与 /admin/
+        // 默认 404，只有 /admin/index.html 可用。产物的资源引用是 /admin/ 开头的绝对路径，
+        // 两个入口都可以直接 forward，不需要额外重定向。
+        registry.addViewController("/admin").setViewName("forward:/admin/index.html");
+        registry.addViewController("/admin/").setViewName("forward:/admin/index.html");
     }
 
     @Override

@@ -86,6 +86,47 @@ docker compose up -d --force-recreate app worker
 宿主机 Nginx 保持监听 `80/443`，将 `app.imali.top` 反向代理到
 `http://127.0.0.1:8080`。证书与 Nginx 配置不由本项目 Compose 修改。
 
+### 3.2 管理端公网入口
+
+管理端与 `/admin/v1/**` 同源，随 backend 镜像发布，不是独立站点，也不需要 CORS
+（取舍见 `docs/adr/0003-admin-web-separate-source-same-origin-runtime.md`）。
+仓库提供 `deploy/nginx/admin.conf` 范本，**不会被 Compose 或 CI 自动部署**，需人工套用：
+
+```bash
+sudo mkdir -p /etc/nginx/idolradar
+sudo cp deploy/nginx/admin.conf /etc/nginx/idolradar/admin.conf
+# 在现有 443 server 块内加一行：include /etc/nginx/idolradar/admin.conf;
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+安全响应头由后端 `SecurityHeadersFilter` 统一下发，Nginx 不重复设置——同一份 CSP
+写在两处必然漂移，漂移后的症状是管理页白屏。若外层 `http`/`server` 块已有全局
+`add_header`，反代响应会出现两条互相冲突的同名头，需要删掉全局那条，
+或在该 `location` 内用 `proxy_hide_header` 去掉后端那条。
+
+套用后验证响应头与缓存策略确实生效：
+
+```bash
+# 入口路径：/admin 经 Nginx 会 301 到 /admin/，Location 必须是相对路径，
+# 出现 http:// 或内部端口说明 absolute_redirect off 没生效
+curl -sI https://app.imali.top/admin | grep -i '^location'
+curl -sL -o /dev/null -w '%{url_effective} %{http_code}\n' https://app.imali.top/admin
+
+curl -sI https://app.imali.top/admin/ | grep -iE \
+  'content-security-policy|x-frame-options|referrer-policy|x-content-type-options|x-robots-tag|cache-control'
+# 指纹产物路径从入口 HTML 里取
+curl -sI "https://app.imali.top$(curl -s https://app.imali.top/admin/ \
+  | grep -o '/admin/assets/[^\"]*\.js' | head -1)" | grep -i cache-control
+```
+
+预期：入口 HTML 为 `Cache-Control: no-store`、`X-Frame-Options: DENY`、
+`X-Robots-Tag: noindex, nofollow`，CSP 含 `default-src 'none'` 与 `frame-ancestors 'none'`；
+`/admin/assets/` 下的指纹产物为 `Cache-Control: public, max-age=31536000, immutable`。
+指纹资源改名即换 URL，长缓存不会造成发版错配；入口 HTML 不缓存，避免旧 HTML 请求已删除的旧资源。
+
+本版不加 IP allowlist：管理员没有固定出口 IP，allowlist 会退化成一个天天要开的临时口子。
+访问控制依赖应用层管理员登录（见 5.1）。
+
 ## 4. GitHub Actions 发布部署
 
 服务器部署需要在 GitHub `production` Environment 中配置：
@@ -157,22 +198,63 @@ curl https://你的域名/readyz
 
 ### 5.1 首次创建管理员
 
-迁移完成且 PostgreSQL 已启动后，使用一次性命令创建管理员。密码只通过当前 Shell
-环境传给容器，数据库仅保存 PBKDF2 强哈希：
+`migrate` 成功且 PostgreSQL 已启动后，用一次性 `admin-bootstrap` 服务创建管理员。
+该服务在 `bootstrap` profile 下，`docker compose up` 不会带起它，只能手工触发：
 
 ```bash
-read -rsp "Admin password: " IDOLRADAR_ADMIN_PASSWORD
-export IDOLRADAR_ADMIN_PASSWORD
-docker compose run --rm --no-deps \
-  -e APP_MODE=admin-bootstrap \
-  -e IDOLRADAR_ADMIN_USERNAME=admin \
-  -e IDOLRADAR_ADMIN_PASSWORD \
-  app
-unset IDOLRADAR_ADMIN_PASSWORD
+read -rsp "Admin password: " IDOLRADAR_ADMIN_PASSWORD; echo
+export IDOLRADAR_ADMIN_PASSWORD IDOLRADAR_ADMIN_USERNAME=admin
+docker compose run --rm -e IDOLRADAR_ADMIN_PASSWORD admin-bootstrap
+unset IDOLRADAR_ADMIN_PASSWORD IDOLRADAR_ADMIN_USERNAME
 ```
 
-密码长度必须为 12–256 个字符。用户名仅允许 3–64 位字母、数字、点、下划线和连字符。
-不要把管理员密码写入 `.env`、Compose 或代码库。相同用户名不会被静默覆盖。
+口令用 `read -rs` 读入并以 `-e 变量名`（不带 `=值`）转发，因此不会进入 Shell 历史、
+`ps` 输出或 `docker compose config`。数据库只保存 PBKDF2-SHA256 强哈希。
+
+成功输出：
+
+```json
+{"event":"admin_bootstrap_completed","result":{"adminId":"...","username":"admin","created":true}}
+```
+
+`created` 为 `false` 表示该用户名已存在，本次**没有创建也没有改写口令**。命令幂等，
+重复执行安全，不会因为一次误操作换掉线上凭据。
+
+约束：口令 12–256 个字符；用户名 3–64 位字母、数字、点、下划线或连字符。
+执行完成后确认管理员口令没有留在 `.env`、`compose.yaml`、Shell 历史或代码库中——
+`.env` 里本来就不该出现 `IDOLRADAR_ADMIN_USERNAME` / `IDOLRADAR_ADMIN_PASSWORD`，
+若为图方便临时写过，此时必须删掉并重新 `chmod 600 .env`。
+
+### 5.2 管理员口令轮换
+
+当前没有管理员管理 UI，也没有「改口令」接口。轮换方式是**新建账号 + 停用旧账号**：
+停用会在同一事务里吊销旧账号的全部有效会话，因此旧口令与旧 token 同时失效。
+
+```bash
+# 1. 用新用户名创建新管理员
+read -rsp "New admin password: " IDOLRADAR_ADMIN_PASSWORD; echo
+export IDOLRADAR_ADMIN_PASSWORD IDOLRADAR_ADMIN_USERNAME=admin-2026q3
+docker compose run --rm -e IDOLRADAR_ADMIN_PASSWORD admin-bootstrap
+
+# 2. 用新账号登录换取 token；口令走 stdin，不进 argv 与历史
+printf '{"username":"%s","password":"%s"}' \
+  "$IDOLRADAR_ADMIN_USERNAME" "$IDOLRADAR_ADMIN_PASSWORD" \
+  | curl -s -X POST http://127.0.0.1:8080/admin/v1/auth/login \
+      -H 'Content-Type: application/json' --data-binary @-
+unset IDOLRADAR_ADMIN_PASSWORD IDOLRADAR_ADMIN_USERNAME
+
+# 3. 停用旧账号并吊销其全部会话
+docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+  -Atc "SELECT id, username FROM idr_admin_account WHERE enabled"
+curl -s -X POST http://127.0.0.1:8080/admin/v1/admins/<旧adminId>/revoke \
+  -H "Authorization: Bearer <第2步返回的 token>"
+```
+
+验证轮换生效：旧账号 `POST /admin/v1/auth/login` 返回 `ADMIN_UNAUTHORIZED`，
+旧 token 访问 `GET /admin/v1/me` 同样返回 `ADMIN_UNAUTHORIZED`。
+停用是软删除，`idr_admin_audit_log` 中的历史操作记录仍可追溯。
+
+被停用的用户名不会被释放，因此每次轮换使用新用户名（例如带季度后缀）。
 
 ## 6. 数据与定时 Worker
 
