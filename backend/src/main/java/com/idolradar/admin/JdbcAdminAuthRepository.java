@@ -128,13 +128,25 @@ public class JdbcAdminAuthRepository implements AdminAuthRepository {
     }
 
     @Override
-    public UUID createAdmin(String username, String passwordHash) {
-        return jdbc.sql("INSERT INTO idr_admin_account (username, password_hash) "
-                        + "VALUES (:username, :passwordHash) RETURNING id")
+    public CreatedAdmin createAdmin(String username, String passwordHash) {
+        // ON CONFLICT DO NOTHING 时不返回行；据此区分“本次创建”与“已存在”，
+        // 让 bootstrap 可以被重复执行而不会覆盖线上管理员口令。
+        Optional<UUID> inserted = jdbc.sql("INSERT INTO idr_admin_account (username, password_hash) "
+                        + "VALUES (:username, :passwordHash) "
+                        + "ON CONFLICT (username) DO NOTHING RETURNING id")
                 .param("username", username)
                 .param("passwordHash", passwordHash)
                 .query(UUID.class)
-                .single();
+                .optional();
+        if (inserted.isPresent()) {
+            return new CreatedAdmin(inserted.get(), true);
+        }
+        return new CreatedAdmin(
+                jdbc.sql("SELECT id FROM idr_admin_account WHERE username = :username")
+                        .param("username", username)
+                        .query(UUID.class)
+                        .single(),
+                false);
     }
 
     private Credential mapCredential(ResultSet resultSet, int rowNumber) throws SQLException {

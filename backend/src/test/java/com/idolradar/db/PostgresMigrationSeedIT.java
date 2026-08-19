@@ -482,7 +482,13 @@ class PostgresMigrationSeedIT {
         JdbcAdminAuthRepository auth = new JdbcAdminAuthRepository(client, transactionManager);
         JdbcAdminAuditRepository audit = new JdbcAdminAuditRepository(client);
 
-        UUID adminId = auth.createAdmin("ops-admin", "pbkdf2-sha256$210000$salt$hash-value");
+        UUID adminId = auth.createAdmin("ops-admin", "pbkdf2-sha256$210000$salt$hash-value").adminId();
+        // bootstrap 会被运维重复执行：同名账号必须返回既有 ID 且不改写口令哈希。
+        var repeated = auth.createAdmin("ops-admin", "pbkdf2-sha256$210000$salt$other-hash");
+        assertEquals(adminId, repeated.adminId());
+        assertFalse(repeated.created());
+        assertEquals("pbkdf2-sha256$210000$salt$hash-value", jdbc.queryForObject(
+                "SELECT password_hash FROM idr_admin_account WHERE id = ?", String.class, adminId));
         String tokenHash = "b".repeat(64);
         assertTrue(auth.createSession(adminId, tokenHash, Instant.now().plus(Duration.ofHours(1))));
         assertTrue(auth.findSession(tokenHash).isPresent());

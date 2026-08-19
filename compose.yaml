@@ -166,6 +166,24 @@ services:
         condition: service_completed_successfully
     restart: "no"
 
+  # 一次性创建首个管理员，手动触发：docker compose run --rm admin-bootstrap
+  # profiles 让 docker compose up 不会带起它；幂等，同名账号不会被覆盖。
+  admin-bootstrap:
+    <<: *backend-service
+    profiles:
+      - bootstrap
+    environment:
+      <<: *database-environment
+      APP_MODE: admin-bootstrap
+      SPRING_FLYWAY_ENABLED: "false"
+      IDOLRADAR_ADMIN_USERNAME: ${IDOLRADAR_ADMIN_USERNAME:-admin}
+      # 口令不在 Compose 里插值，避免进入 docker compose config 输出和 shell 历史；
+      # 运行时用 docker compose run -e IDOLRADAR_ADMIN_PASSWORD 从当前 Shell 传入。
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   app:
     <<: *backend-service
     restart: unless-stopped
