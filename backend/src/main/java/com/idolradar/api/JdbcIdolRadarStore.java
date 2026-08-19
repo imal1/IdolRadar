@@ -128,6 +128,8 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
         IdolRow idol = findIdol(idolId, true).orElseThrow(() -> new AppException(
                 HttpStatus.NOT_FOUND, "IDOL_NOT_FOUND", "守护对象不存在或已停用"));
 
+        // user.idolId() 现在来自守护关联表，因此这里比较的是「当前守护关系是否已是该 idol」，
+        // 语义从设置一个字段变成替换该用户唯一的守护关系；对外返回结构不变。
         if (!Objects.equals(user.idolId(), idolId)) {
             jdbc.sql("UPDATE idr_user SET idol_id = :idolId, guarding_since = NOW(), "
                             + "first_guarded_at = COALESCE(first_guarded_at, NOW()), updated_at = NOW() "
@@ -135,7 +137,7 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
                     .param("idolId", idolId)
                     .param("userId", user.id())
                     .update();
-            // Expand 阶段保留旧字段并同步写守护关联，保证 API/Worker 分批迁移期间数据一致。
+            // 守护关联表已是唯一读取来源；上面那次旧字段写入只为兼容尚未删列的部署，#29 收尾时移除。
             jdbc.sql("DELETE FROM idr_user_guard WHERE user_id = :userId AND idol_id <> :idolId")
                     .param("userId", user.id())
                     .param("idolId", idolId)
@@ -173,7 +175,7 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
         UserRow user = requireUser(openId);
         // 单条条件 UPDATE 原子处理额度累加、模板重置、上限和冷却时间。
         // 把这些约束留在 PostgreSQL，避免并发授权确认重复增加额度。
-        Optional<UserRow> updated = jdbc.sql(
+        Optional<SubscriptionState> updated = jdbc.sql(
                         "UPDATE idr_user SET subscribe_quota = CASE "
                                 + "WHEN subscribe_template_id IS DISTINCT FROM :templateId THEN 1 "
                                 + "ELSE subscribe_quota + 1 END, "
@@ -183,11 +185,14 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
                                 + "AND (subscribe_template_id IS DISTINCT FROM :templateId "
                                 + "OR subscribe_quota < :maxQuota) "
                                 + "AND (subscribed_at IS NULL OR subscribed_at < NOW() - INTERVAL '5 seconds') "
-                                + "RETURNING *")
+                                + "RETURNING subscribe_quota, subscribed_at")
                 .param("templateId", templateId)
                 .param("userId", user.id())
                 .param("maxQuota", MAX_SUBSCRIBE_QUOTA)
-                .query(this::mapUser)
+                // 这条 UPDATE 只作用于 idr_user，取不到守护关联表的列，因此不复用 mapUser。
+                .query((resultSet, rowNumber) -> new SubscriptionState(
+                        resultSet.getInt("subscribe_quota"),
+                        instant(resultSet, "subscribed_at")))
                 .optional();
         if (updated.isEmpty()) {
             UserRow current = findUser(openId).orElseThrow();
@@ -344,7 +349,24 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
     }
 
     private Optional<UserRow> findUser(String openId) {
-        return jdbc.sql("SELECT * FROM idr_user WHERE openid = :openId")
+        // 当前守护对象改从 idr_user_guard 读取；idr_user 上的同名字段仍在写入但不再被读。
+        // LATERAL + LIMIT 1 保证无论关联表有几条守护关系都只返回一行，
+        // 否则用户一旦守护多位 idol，这里的 optional() 会直接抛错。
+        // 「当前」定义为最近开始的那条守护关系，与小程序「换人即替换」的语义一致。
+        return jdbc.sql("""
+                        SELECT u.*,
+                               g.idol_id AS guard_idol_id,
+                               g.guarding_since AS guard_guarding_since
+                        FROM idr_user u
+                        LEFT JOIN LATERAL (
+                          SELECT idol_id, guarding_since
+                          FROM idr_user_guard
+                          WHERE user_id = u.id
+                          ORDER BY guarding_since DESC, idol_id ASC
+                          LIMIT 1
+                        ) g ON TRUE
+                        WHERE u.openid = :openId
+                        """)
                 .param("openId", openId)
                 .query(this::mapUser)
                 .optional();
@@ -450,8 +472,8 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
         return new UserRow(
                 resultSet.getObject("id", UUID.class),
                 resultSet.getString("openid"),
-                resultSet.getString("idol_id"),
-                instant(resultSet, "guarding_since"),
+                resultSet.getString("guard_idol_id"),
+                instant(resultSet, "guard_guarding_since"),
                 resultSet.getInt("subscribe_quota"),
                 resultSet.getString("subscribe_template_id"),
                 instant(resultSet, "subscribed_at"),
@@ -518,6 +540,10 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
             Instant subscribedAt,
             Instant createdAt,
             Instant updatedAt) {
+    }
+
+    /** 订阅授权确认的返回值；该路径不涉及守护关系，因此不用完整的 UserRow。 */
+    private record SubscriptionState(int subscribeQuota, Instant subscribedAt) {
     }
 
     private record IdolRow(String id, String name, String avatar, String bio, boolean enabled) {
