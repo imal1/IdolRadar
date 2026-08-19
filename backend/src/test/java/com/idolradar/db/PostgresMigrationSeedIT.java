@@ -2,6 +2,7 @@ package com.idolradar.db;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -752,6 +753,65 @@ class PostgresMigrationSeedIT {
 
         assertTrue(plan.contains("idx_idr_user_guard_idol_id_user_id"), plan);
         assertFalse(plan.contains("Seq Scan on idr_user_guard"), plan);
+    }
+
+    @Test
+    @Order(14)
+    void clientReadPathsResolveCurrentIdolFromGuardTableNotLegacyColumn() {
+        jdbc.update("INSERT INTO idr_idol (id, name) VALUES ('idol-1', '示例'), ('idol-2', '其他')");
+        jdbc.update("INSERT INTO idr_source (id, idol_id, rss_url, display_name) "
+                + "VALUES ('source-1', 'idol-1', 'https://example.com/feed.xml', '示例源')");
+        jdbc.update("INSERT INTO idr_post (id, idol_id, source_id, title, link, published_at, fetched_at) "
+                + "VALUES ('post-1', 'idol-1', 'source-1', '动态一', 'https://example.com/1', now(), now())");
+
+        // 旧字段写 idol-2、守护关系写 idol-1：只有读路径确实切到关联表，结果才会是 idol-1。
+        UUID userId = insertUser("openid-1", "idol-2", "tpl-1", 3);
+        guard(userId, "idol-1");
+        // 旧字段有值但没有任何守护关系：切换后必须回到引导态。
+        insertUser("openid-legacy-only", "idol-1", "tpl-1", 3);
+
+        JdbcIdolRadarStore api = new JdbcIdolRadarStore(JdbcClient.create(testDataSource), new CursorCodec());
+
+        assertEquals(Boolean.TRUE, api.bootstrap("openid-1").get("hasIdol"));
+        assertEquals("idol-1", api.listIdols("openid-1").get("currentIdolId"));
+        assertEquals("idol-1", currentIdolIdOfHome(api.getHome("openid-1")));
+        assertEquals(1, ((List<?>) api.getFeed("openid-1", null).get("posts")).size());
+
+        assertEquals(Boolean.FALSE, api.bootstrap("openid-legacy-only").get("hasIdol"));
+        assertNull(api.listIdols("openid-legacy-only").get("currentIdolId"));
+        assertTrue(((List<?>) api.getFeed("openid-legacy-only", null).get("posts")).isEmpty());
+
+        // 更换守护对象 = 替换唯一的守护关系；旧字段在 #29 之前仍然同步写入。
+        api.setIdol("openid-1", "idol-2");
+        assertEquals(
+                List.of("idol-2"),
+                jdbc.queryForList("SELECT idol_id FROM idr_user_guard WHERE user_id = ?", String.class, userId));
+        assertEquals("idol-2", jdbc.queryForObject(
+                "SELECT idol_id FROM idr_user WHERE id = ?", String.class, userId));
+        assertEquals("idol-2", api.listIdols("openid-1").get("currentIdolId"));
+    }
+
+    @Test
+    @Order(15)
+    void multipleGuardRowsResolveToTheMostRecentInsteadOfFailing() {
+        jdbc.update("INSERT INTO idr_idol (id, name) VALUES ('idol-1', '示例'), ('idol-2', '其他')");
+        UUID userId = insertUser("openid-1", null, "tpl-1", 3);
+        jdbc.update("INSERT INTO idr_user_guard (user_id, idol_id, guarding_since) "
+                + "VALUES (?, 'idol-1', now() - interval '2 days'), (?, 'idol-2', now())", userId, userId);
+
+        JdbcIdolRadarStore api = new JdbcIdolRadarStore(JdbcClient.create(testDataSource), new CursorCodec());
+
+        // 客户端当前限制一位，但后端模型已允许多条守护关系。读取必须稳定返回一行，
+        // 否则一旦出现第二条，单值查询会直接抛错而不是给出确定结果。
+        assertEquals("idol-2", api.listIdols("openid-1").get("currentIdolId"));
+        assertEquals(Boolean.TRUE, api.bootstrap("openid-1").get("hasIdol"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static String currentIdolIdOfHome(Map<String, Object> home) {
+        Map<String, Object> idol = (Map<String, Object>) home.get("idol");
+        // 序列化后的 idol 主键是 _id，沿用小程序侧的字段约定。
+        return idol == null ? null : (String) idol.get("_id");
     }
 
     private UUID insertUser(String openid, String legacyIdolId, String templateId, int quota) {
