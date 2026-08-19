@@ -622,6 +622,150 @@ class PostgresMigrationSeedIT {
         assertThrows(AppException.class, () -> store.listDeliveries(null, null, 24 * 31));
     }
 
+    @Test
+    @Order(11)
+    void pushTargetsComeFromGuardTableAndIgnoreLegacyUserColumn() {
+        jdbc.update("INSERT INTO idr_idol (id, name) VALUES ('idol-1', '示例'), ('idol-2', '其他')");
+        jdbc.update("INSERT INTO idr_source (id, idol_id, rss_url, display_name) "
+                + "VALUES ('source-1', 'idol-1', 'https://example.com/feed.xml', '示例源')");
+        jdbc.update("INSERT INTO idr_post (id, idol_id, source_id, title, link, published_at, fetched_at) "
+                + "VALUES ('post-1', 'idol-1', 'source-1', '动态一', 'https://example.com/1', now(), now()),"
+                + "       ('post-2', 'idol-2', 'source-1', '动态二', 'https://example.com/2', now(), now())");
+
+        // 旧字段刻意写成与守护关系不一致：只有读路径确实切到关联表，候选名单才会正确。
+        UUID single = insertUser("openid-single", null, "tpl-1", 3);
+        UUID multi = insertUser("openid-multi", "idol-2", "tpl-1", 3);
+        UUID noQuota = insertUser("openid-no-quota", "idol-1", "tpl-1", 0);
+        UUID otherTemplate = insertUser("openid-other-template", "idol-1", "tpl-2", 3);
+        UUID legacyOnly = insertUser("openid-legacy-only", "idol-1", "tpl-1", 3);
+        guard(single, "idol-1");
+        guard(multi, "idol-1");
+        guard(multi, "idol-2");
+        guard(noQuota, "idol-1");
+        guard(otherTemplate, "idol-1");
+        // legacyOnly 只有旧字段、没有守护关系，切换后不应再收到推送。
+
+        WorkerStore store = new WorkerStore(
+                jdbc, new TransactionTemplate(new DataSourceTransactionManager(testDataSource)));
+
+        // 保留数据库返回的顺序：PostgreSQL 按无符号字节序比较 uuid，
+        // 与 Java 的 UUID.compareTo（有符号）不一致，重排会让游标断言取错起点。
+        List<UUID> targets = store.loadEligibleUsers("post-1", "idol-1", "tpl-1", null, 50)
+                .stream().map(WorkerModels.UserTarget::id).toList();
+        assertEquals(2, targets.size(), targets.toString());
+        assertTrue(targets.contains(single) && targets.contains(multi), targets.toString());
+        assertFalse(targets.contains(legacyOnly), "只有旧字段、没有守护关系的用户不应再收到推送");
+        assertFalse(targets.contains(noQuota) || targets.contains(otherTemplate), targets.toString());
+
+        // 守护多位 idol 的用户，在单条动态上只出现一次——关联表按 idol 过滤后每人至多一行，
+        // 不会因为多条守护关系把同一次推送放大成多条。
+        assertEquals(1, targets.stream().filter(multi::equals).count());
+        // 同一用户守护的另一位 idol 发动态时，同样能命中。
+        assertEquals(
+                List.of(multi),
+                store.loadEligibleUsers("post-2", "idol-2", "tpl-1", null, 50)
+                        .stream().map(WorkerModels.UserTarget::id).toList());
+
+        // 游标分页变体走同一条守护表路径：从第一条之后继续，只剩后半段。
+        assertEquals(
+                targets.subList(1, targets.size()),
+                store.loadEligibleUsers("post-1", "idol-1", "tpl-1", targets.get(0), 50)
+                        .stream().map(WorkerModels.UserTarget::id).toList());
+
+        // 额度扣减同样以守护关系为准：没有守护关系的用户无法被扣减，delivery 一并回滚。
+        assertFalse(store.claimDelivery("post-1", legacyOnly, "idol-1", "tpl-1"));
+        assertEquals(0L, jdbc.queryForObject(
+                "SELECT count(*) FROM idr_notification_delivery WHERE user_id = ?", Long.class, legacyOnly));
+        assertTrue(store.claimDelivery("post-1", single, "idol-1", "tpl-1"));
+        assertEquals(2, jdbc.queryForObject(
+                "SELECT subscribe_quota FROM idr_user WHERE id = ?", Integer.class, single));
+
+        // 已有 delivery 的用户不再进入候选名单，避免同轮重复推送。
+        assertEquals(
+                List.of(multi),
+                store.loadEligibleUsers("post-1", "idol-1", "tpl-1", null, 50)
+                        .stream().map(WorkerModels.UserTarget::id).toList());
+    }
+
+    @Test
+    @Order(12)
+    void retryStopsWhenGuardRelationNoLongerCoversThePostIdol() {
+        jdbc.update("INSERT INTO idr_idol (id, name) VALUES ('idol-1', '示例'), ('idol-2', '其他')");
+        jdbc.update("INSERT INTO idr_source (id, idol_id, rss_url, display_name) "
+                + "VALUES ('source-1', 'idol-1', 'https://example.com/feed.xml', '示例源')");
+        jdbc.update("INSERT INTO idr_post (id, idol_id, source_id, title, link, published_at, fetched_at) "
+                + "VALUES ('post-1', 'idol-1', 'source-1', '动态一', 'https://example.com/1', now(), now())");
+        // quota_reserved = TRUE 表示这次投递已经预扣过一次额度，因此账面余额是扣减后的 2。
+        UUID userId = insertUser("openid-1", "idol-1", "tpl-1", 2);
+        guard(userId, "idol-1");
+        jdbc.update("INSERT INTO idr_notification_delivery "
+                + "(post_id, user_id, template_id, status, attempt_count, quota_reserved, next_attempt_at) "
+                + "VALUES ('post-1', ?, 'tpl-1', 'retryable', 1, TRUE, now() - interval '1 minute')", userId);
+
+        WorkerStore store = new WorkerStore(
+                jdbc, new TransactionTemplate(new DataSourceTransactionManager(testDataSource)));
+        WorkerModels.RetryDelivery candidate = store.loadDueDeliveries(10).get(0);
+
+        // 用户改守 idol-2：旧字段仍写着 idol-1，但守护关系已经不覆盖这条动态的 idol。
+        jdbc.update("DELETE FROM idr_user_guard WHERE user_id = ?", userId);
+        guard(userId, "idol-2");
+
+        assertFalse(store.claimRetryDelivery(candidate, "tpl-1", 5));
+        assertEquals("SUBSCRIPTION_CHANGED", jdbc.queryForObject(
+                "SELECT error_code FROM idr_notification_delivery WHERE post_id = 'post-1' AND user_id = ?",
+                String.class, userId));
+        // 预留的额度必须退还，否则用户会因为换守护对象白白损失一次配额。
+        assertEquals(3, jdbc.queryForObject(
+                "SELECT subscribe_quota FROM idr_user WHERE id = ?", Integer.class, userId),
+                "退还后应回到预扣之前的 3");
+    }
+
+    @Test
+    @Order(13)
+    void pushTargetQueryUsesGuardIndexInsteadOfScanningEveryUser() {
+        jdbc.update("INSERT INTO idr_idol (id, name) VALUES ('idol-1', '示例'), ('idol-2', '其他')");
+        jdbc.update("INSERT INTO idr_source (id, idol_id, rss_url, display_name) "
+                + "VALUES ('source-1', 'idol-1', 'https://example.com/feed.xml', '示例源')");
+        jdbc.update("INSERT INTO idr_post (id, idol_id, source_id, title, link, published_at, fetched_at) "
+                + "VALUES ('post-1', 'idol-1', 'source-1', '动态一', 'https://example.com/1', now(), now())");
+        // 造够数据量，让规划器有理由选索引；行数太少时顺序扫描本来就更快，断言会失去意义。
+        jdbc.update("INSERT INTO idr_user (openid, subscribe_template_id, subscribe_quota) "
+                + "SELECT 'openid-' || i, 'tpl-1', 3 FROM generate_series(1, 5000) AS i");
+        jdbc.update("INSERT INTO idr_user_guard (user_id, idol_id, guarding_since) "
+                + "SELECT id, CASE WHEN random() < 0.01 THEN 'idol-1' ELSE 'idol-2' END, now() FROM idr_user");
+        jdbc.execute("ANALYZE idr_user");
+        jdbc.execute("ANALYZE idr_user_guard");
+
+        String plan = String.join("\n", jdbc.queryForList("""
+                EXPLAIN SELECT u.id, u.openid
+                FROM idr_user_guard g
+                JOIN idr_user u ON u.id = g.user_id
+                LEFT JOIN idr_notification_delivery d
+                  ON d.post_id = 'post-1' AND d.user_id = u.id
+                WHERE g.idol_id = 'idol-1'
+                  AND u.subscribe_template_id = 'tpl-1'
+                  AND u.subscribe_quota > 0
+                  AND d.user_id IS NULL
+                ORDER BY u.id ASC
+                LIMIT 50
+                """, String.class));
+
+        assertTrue(plan.contains("idx_idr_user_guard_idol_id_user_id"), plan);
+        assertFalse(plan.contains("Seq Scan on idr_user_guard"), plan);
+    }
+
+    private UUID insertUser(String openid, String legacyIdolId, String templateId, int quota) {
+        return jdbc.queryForObject(
+                "INSERT INTO idr_user (openid, idol_id, subscribe_template_id, subscribe_quota) "
+                        + "VALUES (?, ?, ?, ?) RETURNING id",
+                UUID.class, openid, legacyIdolId, templateId, quota);
+    }
+
+    private void guard(UUID userId, String idolId) {
+        jdbc.update("INSERT INTO idr_user_guard (user_id, idol_id, guarding_since) VALUES (?, ?, now())",
+                userId, idolId);
+    }
+
     private DatabaseCredentials databaseCredentials() {
         String url = System.getenv("IDOLRADAR_TEST_DATABASE_URL");
         if (url != null && !url.isBlank()) {

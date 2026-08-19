@@ -163,10 +163,11 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
         if (afterId == null) {
             return jdbc.query("""
                     SELECT u.id, u.openid
-                    FROM idr_user u
+                    FROM idr_user_guard g
+                    JOIN idr_user u ON u.id = g.user_id
                     LEFT JOIN idr_notification_delivery d
                       ON d.post_id = ? AND d.user_id = u.id
-                    WHERE u.idol_id = ?
+                    WHERE g.idol_id = ?
                       AND u.subscribe_template_id = ?
                       AND u.subscribe_quota > 0
                       AND d.user_id IS NULL
@@ -178,10 +179,11 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
         }
         return jdbc.query("""
                 SELECT u.id, u.openid
-                FROM idr_user u
+                FROM idr_user_guard g
+                JOIN idr_user u ON u.id = g.user_id
                 LEFT JOIN idr_notification_delivery d
                   ON d.post_id = ? AND d.user_id = u.id
-                WHERE u.idol_id = ?
+                WHERE g.idol_id = ?
                   AND u.subscribe_template_id = ?
                   AND u.subscribe_quota > 0
                   AND d.user_id IS NULL
@@ -210,7 +212,12 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
             int reserved = jdbc.update("""
                     UPDATE idr_user
                     SET subscribe_quota = subscribe_quota - 1, updated_at = NOW()
-                    WHERE id = ? AND idol_id = ? AND subscribe_template_id = ?
+                    WHERE id = ?
+                      AND EXISTS (
+                        SELECT 1 FROM idr_user_guard g
+                        WHERE g.user_id = idr_user.id AND g.idol_id = ?
+                      )
+                      AND subscribe_template_id = ?
                       AND subscribe_quota > 0
                     """, userId, idolId, templateId);
             if (reserved != 1) {
@@ -364,16 +371,22 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
             Optional<DeliveryState> state = lockDueDelivery(postId, userId);
             if (state.isEmpty()) return false;
             DeliveryState delivery = state.get();
+            // 行锁仍加在 idr_user 上（它持有额度）；守护关系改从关联表判断。
+            // EXISTS 子查询不参与 FOR UPDATE，不会额外锁住守护表。
             Optional<UserSubscription> subscription = jdbc.query("""
-                    SELECT idol_id, subscribe_template_id
-                    FROM idr_user WHERE id = ? FOR UPDATE
+                    SELECT u.subscribe_template_id,
+                           EXISTS (
+                             SELECT 1 FROM idr_user_guard g
+                             WHERE g.user_id = u.id AND g.idol_id = ?
+                           ) AS guards_idol
+                    FROM idr_user u WHERE u.id = ? FOR UPDATE
                     """,
                     (result, row) -> new UserSubscription(
-                            result.getString("idol_id"),
+                            result.getBoolean("guards_idol"),
                             result.getString("subscribe_template_id")),
-                    userId).stream().findFirst();
+                    candidate.post().idolId(), userId).stream().findFirst();
             boolean compatible = subscription.isPresent()
-                    && candidate.post().idolId().equals(subscription.get().idolId())
+                    && subscription.get().guardsIdol()
                     && templateId.equals(subscription.get().templateId())
                     && templateId.equals(delivery.templateId());
             boolean exhausted = delivery.attemptCount() >= maxAttempts;
@@ -577,5 +590,5 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
     }
 
     private record DeliveryState(int attemptCount, boolean quotaReserved, String templateId) {}
-    private record UserSubscription(String idolId, String templateId) {}
+    private record UserSubscription(boolean guardsIdol, String templateId) {}
 }
