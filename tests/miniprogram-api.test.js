@@ -157,3 +157,51 @@ test('non-401 action errors do not trigger reauthentication', async () => {
   assert.equal(context.calls.login, 0);
   assert.equal(context.calls.requests.length, 1);
 });
+
+test('source mute actions substitute the path parameter and keep it out of the body', async () => {
+  const loaded = loadApi({
+    token: 'existing-token',
+    onRequest(request) {
+      respond(request, 200, { ok: true, data: { sourceId: 'source-1', muted: true } });
+    }
+  });
+
+  await loaded.api.callUser('muteSource', { sourceId: 'source-1' });
+  await loaded.api.callUser('unmuteSource', { sourceId: 'source-1' });
+
+  const [mute, unmute] = loaded.calls.requests;
+  assert.match(mute.url, /\/v1\/me\/sources\/source-1\/mute$/);
+  assert.equal(mute.method, 'PUT');
+  assert.equal(unmute.method, 'DELETE');
+  // 路径参数不能留在请求体里：后端开启了未知字段拒绝，多送就是一个 400。
+  assert.deepEqual(mute.data, {});
+  assert.deepEqual(unmute.data, {});
+});
+
+test('source ids are percent-encoded so they cannot escape the path', async () => {
+  const loaded = loadApi({
+    token: 'existing-token',
+    onRequest(request) {
+      respond(request, 200, { ok: true, data: {} });
+    }
+  });
+
+  await loaded.api.callUser('muteSource', { sourceId: 'a/b?c' });
+
+  assert.match(loaded.calls.requests[0].url, /\/v1\/me\/sources\/a%2Fb%3Fc\/mute$/);
+});
+
+test('a missing path parameter fails before any request is sent', async () => {
+  const loaded = loadApi({
+    token: 'existing-token',
+    onRequest(request) {
+      respond(request, 200, { ok: true, data: {} });
+    }
+  });
+
+  await assert.rejects(
+    () => loaded.api.callUser('muteSource', {}),
+    (error) => error.code === 'MISSING_PATH_PARAM'
+  );
+  assert.equal(loaded.calls.requests.length, 0);
+});

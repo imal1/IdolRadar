@@ -12,7 +12,11 @@ var ACTIONS = {
   setIdol: { method: 'PUT', path: '/v1/me/idol' },
   recordSubscription: { method: 'POST', path: '/v1/me/subscriptions' },
   submitIdolRequest: { method: 'POST', path: '/v1/idol-requests' },
-  listMyIdolRequests: { method: 'GET', path: '/v1/me/idol-requests' }
+  listMyIdolRequests: { method: 'GET', path: '/v1/me/idol-requests' },
+  listMySources: { method: 'GET', path: '/v1/me/sources' },
+  // :sourceId 由 params 声明并从 payload 取值；页面仍然不接触 URL 拼接。
+  muteSource: { method: 'PUT', path: '/v1/me/sources/:sourceId/mute', params: ['sourceId'] },
+  unmuteSource: { method: 'DELETE', path: '/v1/me/sources/:sourceId/mute', params: ['sourceId'] }
 };
 
 function createError(detail, fallbackCode) {
@@ -160,13 +164,32 @@ function appendQuery(path, fields, payload) {
   return query.length ? path + '?' + query.join('&') : path;
 }
 
+// 把 :name 占位符替换成 payload 里的值，并返回剩余字段作为请求体。
+// 路径参数留在 body 里没有意义，后端开启了未知字段拒绝，多送反而是风险。
+function applyPathParams(path, fields, payload) {
+  var body = {};
+  Object.keys(payload).forEach(function (key) {
+    body[key] = payload[key];
+  });
+  (fields || []).forEach(function (field) {
+    var value = body[field];
+    if (value === undefined || value === null || value === '') {
+      throw createError({ message: '缺少路径参数：' + field, code: 'MISSING_PATH_PARAM' });
+    }
+    path = path.replace(':' + field, encodeURIComponent(value));
+    delete body[field];
+  });
+  return { path: path, body: body };
+}
+
 function performAction(action, payload, token) {
   var definition = ACTIONS[action];
-  var path = appendQuery(definition.path, definition.query, payload);
+  var resolved = applyPathParams(definition.path, definition.params, payload);
+  var path = appendQuery(resolved.path, definition.query, payload);
   return request({
     method: definition.method,
     path: path,
-    data: definition.method === 'GET' ? undefined : payload,
+    data: definition.method === 'GET' ? undefined : resolved.body,
     header: {
       'content-type': 'application/json',
       Authorization: 'Bearer ' + token

@@ -43,6 +43,41 @@ function guardDays(home, user) {
   return Math.max(1, Math.floor((Date.now() - started.getTime()) / 86400000) + 1);
 }
 
+function normalizeSources(list) {
+  if (!Array.isArray(list)) {
+    return [];
+  }
+  return list.filter(function (source) {
+    return source && typeof source === 'object' && !Array.isArray(source);
+  }).map(function (source) {
+    return {
+      id: String(source._id || source.id || ''),
+      // 展示名区分同一渠道下的不同账号，例如后援会与本人的微博。
+      displayName: String(source.displayName || source.channel || '动态来源'),
+      channel: String(source.channel || ''),
+      muted: source.muted === true,
+      pending: false
+    };
+  }).filter(function (source) {
+    return source.id !== '';
+  });
+}
+
+function isAllMuted(sources) {
+  return sources.length > 0 && sources.every(function (source) {
+    return source.muted;
+  });
+}
+
+function findSourceIndex(sources, sourceId) {
+  for (var i = 0; i < sources.length; i += 1) {
+    if (sources[i].id === sourceId) {
+      return i;
+    }
+  }
+  return -1;
+}
+
 Page({
   data: {
     loading: true,
@@ -52,6 +87,10 @@ Page({
     guardDays: 1,
     sourceCount: 0,
     subscribeQuota: 0,
+    sources: [],
+    sourcesLoading: true,
+    sourcesError: '',
+    allMuted: false,
     version: config.version
   },
 
@@ -108,6 +147,7 @@ Page({
         sourceCount: sourceCount,
         subscribeQuota: safeNumber(idolUtils.firstDefined(user.subscribeQuota, home.subscribeQuota, 0))
       });
+      page.loadSources();
     }).catch(function (error) {
       page.setData({
         loading: false,
@@ -118,6 +158,57 @@ Page({
 
   retry: function () {
     this.loadData();
+  },
+
+  loadSources: function () {
+    var page = this;
+    this.setData({ sourcesLoading: true, sourcesError: '' });
+    return api.callUser('listMySources').then(function (data) {
+      var sources = normalizeSources(data && data.sources);
+      page.setData({
+        sourcesLoading: false,
+        sources: sources,
+        allMuted: isAllMuted(sources)
+      });
+    }).catch(function (error) {
+      page.setData({
+        sourcesLoading: false,
+        sourcesError: error.message || '来源列表加载失败'
+      });
+    });
+  },
+
+  retrySources: function () {
+    this.loadSources();
+  },
+
+  toggleSource: function (event) {
+    var page = this;
+    var sourceId = event.currentTarget.dataset.id;
+    var index = findSourceIndex(this.data.sources, sourceId);
+    if (index < 0 || this.data.sources[index].pending) {
+      return;
+    }
+
+    // switch 的 checked 表示「接收」，与后端存的「已关闭」相反。
+    var muted = !event.detail.value;
+    var previous = this.data.sources[index].muted;
+    // 先按用户操作更新界面，请求失败再回滚：开关必须即时反馈，否则会被连点。
+    this.patchSource(index, { muted: muted, pending: true });
+
+    // 返回 promise：调用方（含测试）需要能等到请求真正结束，否则回滚还没发生就被观察。
+    return api.callUser(muted ? 'muteSource' : 'unmuteSource', { sourceId: sourceId }).then(function () {
+      page.patchSource(index, { pending: false });
+    }).catch(function (error) {
+      page.patchSource(index, { muted: previous, pending: false });
+      wx.showToast({ title: error.message || '设置失败，请重试', icon: 'none' });
+    });
+  },
+
+  patchSource: function (index, changes) {
+    var sources = this.data.sources.slice();
+    sources[index] = Object.assign({}, sources[index], changes);
+    this.setData({ sources: sources, allMuted: isAllMuted(sources) });
   },
 
   avatarError: function () {
