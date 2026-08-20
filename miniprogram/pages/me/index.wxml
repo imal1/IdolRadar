@@ -52,6 +52,42 @@
       </view>
     </view>
 
+    <view class="me-card sources-card">
+      <text class="card-label">动态来源</text>
+
+      <view class="source-loading" wx:if="{{sourcesLoading}}">
+        <view></view>
+        <view></view>
+      </view>
+
+      <view class="source-error" wx:elif="{{sourcesError}}">
+        <text class="source-error-copy">{{sourcesError}}</text>
+        <view class="secondary-button" aria-role="button" bindtap="retrySources">重新加载</view>
+      </view>
+
+      <block wx:else>
+        <view class="source-row" wx:for="{{sources}}" wx:key="id">
+          <view class="source-copy">
+            <text class="source-name">{{item.displayName}}</text>
+            <text class="source-channel" wx:if="{{item.channel}}">{{item.channel}}</text>
+          </view>
+          <switch
+            class="source-switch"
+            checked="{{!item.muted}}"
+            color="#c4526e"
+            disabled="{{item.pending}}"
+            data-id="{{item.id}}"
+            bindchange="toggleSource"
+          ></switch>
+        </view>
+
+        <text class="source-empty" wx:if="{{sources.length === 0}}">这位 idol 还没有可配置的来源</text>
+        <view class="source-hint" wx:if="{{allMuted}}">
+          <text>已关闭全部来源，你将不会再收到 {{idol.name}} 的任何推送。</text>
+        </view>
+      </block>
+    </view>
+
     <view class="about-list">
       <view class="about-row" aria-role="button" bindtap="showAbout">
         <text>关于 IdolRadar</text>
