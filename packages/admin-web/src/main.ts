@@ -2,7 +2,7 @@ import './styles.css';
 
 import { ADMIN_TOKEN_KEY, adminRequest, bindApiHandlers, errorMessage, requestReload } from './api';
 import { state, type PageId } from './state';
-import type { AdminProfile, DeliveryBoard, Idol, IdolRequest, LoginResult, Source, SourceSummary } from './types';
+import type { AdminProfile, CoreMetrics, DeliveryBoard, Idol, IdolRequest, LoginResult, Source, SourceSummary } from './types';
 import { $, $$, icon, showToast } from './ui';
 
 import * as audit from './pages/audit';
@@ -98,9 +98,13 @@ async function loadDeliveries({ scoped = true } = {}): Promise<void> {
   state.deliveryQueue = data.queue;
 }
 
+async function loadMetrics(): Promise<void> {
+  state.metrics = await adminRequest<CoreMetrics>(`/admin/v1/metrics?rangeDays=${state.metricsRange}`);
+}
+
 // 新建来源要选所属 idol，所以来源页同时需要 idol 列表；投递页的 idol 筛选同理。
 const loaders: Partial<Record<PageId, () => Promise<unknown>>> = {
-  dashboard: () => Promise.all([loadSources(), loadRequests(), loadDeliveries({ scoped: false })]),
+  dashboard: () => Promise.all([loadMetrics(), loadSources(), loadRequests(), loadDeliveries({ scoped: false })]),
   idols: loadIdols,
   sources: () => Promise.all([loadSources(), loadIdols()]),
   deliveries: () => Promise.all([loadDeliveries(), loadIdols()]),
@@ -167,7 +171,7 @@ function handlePageChange(event: Event): void {
   if (target.id === 'audit-result') { state.auditResult = target.value; renderPage({ focus: false }); }
   if (target.id === 'delivery-range') { state.deliveryRange = Number(target.value); requestReload(); }
   if (target.id === 'delivery-idol') { state.deliveryIdol = target.value; requestReload(); }
-  if (target.id === 'dashboard-range') showToast(`指标范围已切换为${target.value}`);
+  if (target.id === 'dashboard-range') { state.metricsRange = Number(target.value); requestReload(); }
 }
 
 function handlePageInput(event: Event): void {

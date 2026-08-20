@@ -324,3 +324,47 @@ tbody tr:hover { background: #fffafa; }
   .source-overview { grid-template-columns: repeat(2, 1fr); }
   .update-time { display: none; }
 }
+
+.metric-funnel .funnel-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.funnel-step {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 96px;
+}
+
+.funnel-step span {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.funnel-step strong {
+  font-size: 24px;
+}
+
+.funnel-arrow {
+  font-size: 13px;
+  opacity: 0.75;
+  white-space: nowrap;
+}
+
+.metric-note {
+  margin: 12px 0 0;
+  font-size: 12px;
+  line-height: 1.7;
+  opacity: 0.7;
+}
+
+.chart-empty {
+  margin: 0;
+  padding: 48px 0;
+  text-align: center;
+  font-size: 13px;
+  opacity: 0.65;
+}

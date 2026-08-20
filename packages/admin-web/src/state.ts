@@ -1,5 +1,6 @@
 import type {
   AuditEntry,
+  CoreMetrics,
   Delivery,
   DeliveryFailure,
   DeliveryQueue,
@@ -36,6 +37,8 @@ export interface AdminState {
   deliveryQueue: DeliveryQueue;
   deliveryRange: number;
   deliveryIdol: string;
+  metrics: CoreMetrics | null;
+  metricsRange: number;
   audits: AuditEntry[];
 }
 
@@ -57,6 +60,9 @@ export const state: AdminState = {
   deliveryQueue: {},
   deliveryRange: 24,
   deliveryIdol: 'all',
+  // null 表示尚未拉到指标：页面据此显示占位，而不是把 0 当成真实结果展示。
+  metrics: null,
+  metricsRange: 7,
   // 审计日志仍为演示数据，接真实接口是独立 issue。
   audits: [
     { id: 'AUD-00816', operator: '管理员', action: 'UPDATE_SOURCE', resource: 'idr_source#13', result: 'success', requestId: 'req-3a9f71', summary: '更新来源 RSS 地址', time: '今天 11:06:22', before: '{"rss_url":"https://old.example.com/route"}', after: '{"rss_url":"https://rss.example.com/weibo/user/guard-club"}' },

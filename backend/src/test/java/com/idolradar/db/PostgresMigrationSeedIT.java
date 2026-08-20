@@ -12,6 +12,7 @@ import com.idolradar.admin.AdminAuditRepository;
 import com.idolradar.admin.JdbcAdminAuditRepository;
 import com.idolradar.admin.AdminCatalogStore;
 import com.idolradar.admin.AdminDeliveryStore;
+import com.idolradar.admin.AdminMetricsStore;
 import com.idolradar.admin.JdbcAdminAuthRepository;
 import com.idolradar.api.AppException;
 import com.idolradar.api.CursorCodec;
@@ -1088,6 +1089,70 @@ class PostgresMigrationSeedIT {
         @SuppressWarnings("unchecked")
         Map<String, Object> after = (Map<String, Object>) board.listDeliveries(null, null, 24).get("summary");
         assertEquals(50.0, after.get("openRate"), "两条已发送投递中有一条被打开");
+    }
+
+    @Test
+    @Order(22)
+    void coreMetricsFollowThePrdDefinitionsForConversionAndReturnVisits() {
+        jdbc.update("INSERT INTO idr_idol (id, name) VALUES ('idol-1', '示例')");
+        jdbc.update("INSERT INTO idr_source (id, idol_id, rss_url, display_name) "
+                + "VALUES ('source-1', 'idol-1', 'https://example.com/feed.xml', '示例 · 微博')");
+        jdbc.update("INSERT INTO idr_post (id, idol_id, source_id, title, link, published_at, fetched_at) "
+                + "VALUES ('post-1', 'idol-1', 'source-1', '动态一', 'https://example.com/1', now(), now())");
+
+        // 四个新用户走到漏斗的不同深度：只注册、选了 idol、选了并授权、选了并授权。
+        UUID onlySignedUp = insertUser("openid-1", null, null, 0);
+        UUID guardedOnly = insertUser("openid-2", null, null, 0);
+        UUID converted = insertUser("openid-3", null, "tpl-1", 3);
+        UUID alsoConverted = insertUser("openid-4", null, "tpl-1", 3);
+        jdbc.update("UPDATE idr_user SET first_guarded_at = now() WHERE id IN (?, ?, ?)",
+                guardedOnly, converted, alsoConverted);
+        jdbc.update("UPDATE idr_user SET first_subscribed_at = now() WHERE id IN (?, ?)",
+                converted, alsoConverted);
+        // 区间之外注册的老用户不能进分母，否则转化率会被历史稀释。
+        jdbc.update("INSERT INTO idr_user (openid, created_at) VALUES ('openid-old', now() - interval '60 days')");
+
+        AdminMetricsStore metrics = new AdminMetricsStore(JdbcClient.create(testDataSource));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> funnel = (Map<String, Object>) metrics.coreMetrics(7).get("funnel");
+        assertEquals(4, funnel.get("newUsers"));
+        assertEquals(3, funnel.get("guarded"));
+        assertEquals(2, funnel.get("subscribed"));
+        assertEquals(75.0, funnel.get("guardRate"), "4 人中 3 人选了 idol");
+        assertEquals(66.67, funnel.get("subscribeRate"), "选了 idol 的 3 人中 2 人授权");
+        assertEquals(50.0, funnel.get("conversionRate"), "闭环转化率是完成授权占新增用户的比例");
+
+        // 三条已送达投递：一条 1 小时内打开、一条 30 小时后才打开、一条没打开。
+        jdbc.update("INSERT INTO idr_notification_delivery "
+                + "(post_id, user_id, template_id, status, finished_at, first_opened_at, last_opened_at, open_count) "
+                + "VALUES ('post-1', ?, 'tpl-1', 'sent', now() - interval '2 hours', "
+                + "        now() - interval '1 hour', now() - interval '1 hour', 1)", converted);
+        jdbc.update("INSERT INTO idr_notification_delivery "
+                + "(post_id, user_id, template_id, status, finished_at, first_opened_at, last_opened_at, open_count) "
+                + "VALUES ('post-1', ?, 'tpl-1', 'sent', now() - interval '40 hours', "
+                + "        now() - interval '5 hours', now() - interval '5 hours', 1)", alsoConverted);
+        jdbc.update("INSERT INTO idr_notification_delivery "
+                + "(post_id, user_id, template_id, status, finished_at) "
+                + "VALUES ('post-1', ?, 'tpl-1', 'sent', now() - interval '3 hours')", guardedOnly);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> delivery = (Map<String, Object>) metrics.coreMetrics(7).get("delivery");
+        assertEquals(3, delivery.get("sent"));
+        // 超过 24 小时才打开的那条不计入：PRD 的口径是「收到推送后 24h 内打开」。
+        assertEquals(1, delivery.get("openedWithin24h"));
+        assertEquals(33.33, delivery.get("openRate"));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> trend = (List<Map<String, Object>>) metrics.coreMetrics(7).get("trend");
+        // 区间内每一天都要有数据点，没有数据的日子补零，否则折线会断开。
+        assertEquals(8, trend.size(), "7 天区间含首尾两端共 8 个自然日");
+        assertEquals(4, trend.stream().mapToInt(point -> (int) point.get("newUsers")).sum());
+        assertEquals(2, trend.stream().mapToInt(point -> (int) point.get("subscribed")).sum());
+        assertTrue(trend.stream().allMatch(point -> point.get("date") != null));
+
+        AppException tooWide = assertThrows(AppException.class, () -> metrics.coreMetrics(365));
+        assertEquals("INVALID_INPUT", tooWide.code());
     }
 
     private UUID insertUser(String openid, String legacyIdolId, String templateId, int quota) {
