@@ -17,6 +17,10 @@ function normalizePost(post, now) {
     summary: text(post.summary) || title,
     link: text(post.link),
     channel: text(post.channel) || text(post.sourceChannel) || text(source.channel) || '动态',
+    // 来源展示名用于区分同一渠道下的不同账号，例如「王一博后援会 · 微博」与本人微博。
+    // 老后端不返回该字段时回落到渠道名，标签不会变空。
+    sourceName: text(post.sourceName) || text(source.displayName) || text(source.name)
+      || text(post.channel) || text(post.sourceChannel) || text(source.channel) || '动态',
     publishedAt: publishedAt,
     timeText: time.formatRelativeTime(publishedAt, now)
   };

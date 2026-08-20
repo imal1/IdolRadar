@@ -68,7 +68,7 @@
     <view wx:if="{{latestPost}}" id="latest-post" class="latest-card deep-highlight" data-link="{{latestPost.link}}" catchtap="copyLink">
       <view class="post-meta">
         <text class="caught-tag">蹲到了！</text>
-        <text class="channel-tag {{latestPost.tagClass}}">{{latestPost.channel}}</text>
+        <text class="channel-tag {{latestPost.tagClass}}">{{latestPost.sourceName}}</text>
         <text class="post-time">{{latestPost.timeText}}</text>
       </view>
       <text class="latest-title">{{latestPost.title}}</text>
@@ -96,7 +96,7 @@
         catchtap="copyLink"
       >
         <view class="post-meta">
-          <text class="channel-tag {{item.tagClass}}">{{item.channel}}</text>
+          <text class="channel-tag {{item.tagClass}}">{{item.sourceName}}</text>
           <text class="post-time">{{item.timeText}}</text>
         </view>
         <text class="feed-title">{{item.title}}</text>
