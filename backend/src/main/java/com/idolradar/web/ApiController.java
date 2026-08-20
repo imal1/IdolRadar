@@ -93,6 +93,13 @@ public class ApiController {
         return ApiResponse.ok(store.listMyIdolRequests(identity.openId()));
     }
 
+    @PostMapping("/v1/notification-deliveries/{postId}/open")
+    public ApiResponse<Map<String, Object>> reportNotificationOpen(
+            @RequestAttribute(AuthInterceptor.IDENTITY_ATTRIBUTE) AuthService.Identity identity,
+            @PathVariable @NotBlank @Size(max = 128) String postId) {
+        return ApiResponse.ok(store.recordNotificationOpen(identity.openId(), postId));
+    }
+
     @GetMapping("/v1/me/sources")
     public ApiResponse<Map<String, Object>> mySources(
             @RequestAttribute(AuthInterceptor.IDENTITY_ATTRIBUTE) AuthService.Identity identity) {

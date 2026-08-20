@@ -101,7 +101,15 @@ Page({
     this._shownOnce = false;
     this._dataRequestId = 0;
     theme.watchPage(this);
-    this.setData({ deepLinkPostId: safeDecode(options && options.postId) });
+    var deepLinkPostId = safeDecode(options && options.postId);
+    this.setData({ deepLinkPostId: deepLinkPostId });
+    // 带 postId 才是从推送落地：普通打开不上报，避免把日常访问计成回访。
+    // 上报只为统计，失败不能影响页面加载，因此与首屏加载并行且吞掉异常。
+    if (deepLinkPostId) {
+      api.callUser('reportNotificationOpen', { postId: deepLinkPostId }).catch(function () {
+        return null;
+      });
+    }
     this.loadInitial().catch(function () {
       return null;
     });

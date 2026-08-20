@@ -343,6 +343,42 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
     }
 
     @Override
+    @Transactional
+    public Map<String, Object> recordNotificationOpen(String openId, String postId) {
+        validateId(postId, "postId");
+        UserRow user = requireUser(openId);
+
+        // 首次打开时间只写一次，最近打开时间每次刷新，次数累加——三者要一起满足
+        // ck_idr_notification_delivery_open_times 约束。RETURNING 取的是更新后的值，
+        // 因此 open_count = 1 即代表这是首次回访。
+        Optional<Map<String, Object>> updated = jdbc.sql(
+                        "UPDATE idr_notification_delivery "
+                                + "SET first_opened_at = COALESCE(first_opened_at, NOW()), "
+                                + "    last_opened_at = NOW(), "
+                                + "    open_count = open_count + 1, "
+                                + "    updated_at = NOW() "
+                                + "WHERE post_id = :postId AND user_id = :userId "
+                                + "RETURNING open_count")
+                .param("postId", postId)
+                .param("userId", user.id())
+                .query((resultSet, rowNumber) -> {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("openCount", resultSet.getInt("open_count"));
+                    row.put("firstOpen", resultSet.getInt("open_count") == 1);
+                    return row;
+                })
+                .optional();
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("postId", postId);
+        // 没有匹配的投递记录不是错误：用户可能只是正常打开小程序，或带了一个过期的 postId。
+        // 返回 200 而非 404，客户端无须为此弹错误提示。
+        result.put("recorded", updated.isPresent());
+        updated.ifPresent(result::putAll);
+        return result;
+    }
+
+    @Override
     public Map<String, Object> listMySources(String openId) {
         UserRow user = requireUser(openId);
         Map<String, Object> result = new LinkedHashMap<>();

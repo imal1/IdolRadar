@@ -206,4 +206,24 @@ class ApiControllerTest {
         verify(store).setSourceMuted("openid-1", "source-1", true);
         verify(store).setSourceMuted("openid-1", "source-1", false);
     }
+
+    @Test
+    void notificationOpenRouteReportsWithoutLeakingUserIdentity() throws Exception {
+        AuthService.Identity identity = new AuthService.Identity(
+                UUID.randomUUID(), "openid-1", Instant.now().plus(Duration.ofDays(1)));
+        when(auth.authenticate(anyString())).thenReturn(identity);
+        when(store.recordNotificationOpen("openid-1", "post-1")).thenReturn(
+                Map.of("postId", "post-1", "recorded", true, "firstOpen", true, "openCount", 1));
+
+        protectedMvc.perform(post("/v1/notification-deliveries/post-1/open")
+                        .header("Authorization", "Bearer " + "t".repeat(43)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.recorded").value(true))
+                .andExpect(jsonPath("$.data.firstOpen").value(true))
+                // 用户身份来自会话，既不在请求里也不在响应里出现。
+                .andExpect(jsonPath("$.data.openId").doesNotExist())
+                .andExpect(jsonPath("$.data.userId").doesNotExist());
+
+        verify(store).recordNotificationOpen("openid-1", "post-1");
+    }
 }
