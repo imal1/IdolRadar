@@ -25,7 +25,10 @@ public class WebMvcConfiguration implements WebMvcConfigurer {
             "/v1/me/idol",
             "/v1/me/subscriptions",
             "/v1/idol-requests",
-            "/v1/me/idol-requests");
+            "/v1/me/idol-requests",
+            "/v1/me/sources",
+            // 带路径变量的开关接口同样要走认证与限流，否则可以匿名读写他人设置。
+            "/v1/me/sources/*/mute");
 
     private final AuthInterceptor authInterceptor;
     private final AdminAuthInterceptor adminAuthInterceptor;

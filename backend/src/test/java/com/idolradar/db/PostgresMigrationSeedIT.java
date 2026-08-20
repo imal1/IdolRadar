@@ -883,6 +883,132 @@ class PostgresMigrationSeedIT {
                 .findFirst().orElseThrow().get("sourceName"));
     }
 
+    @Test
+    @Order(17)
+    void mutedSourcesAreExcludedFromPushAndSurviveIdolSwitch() {
+        jdbc.update("INSERT INTO idr_idol (id, name) VALUES ('idol-1', '示例'), ('idol-2', '其他')");
+        jdbc.update("INSERT INTO idr_source (id, idol_id, rss_url, display_name, channel) VALUES "
+                + "('source-self', 'idol-1', 'https://example.com/self.xml', '示例 · 微博', '微博'),"
+                + "('source-fanclub', 'idol-1', 'https://example.com/fans.xml', '示例后援会 · 微博', '微博')");
+        jdbc.update("INSERT INTO idr_post (id, idol_id, source_id, channel, title, link, published_at, fetched_at) "
+                + "VALUES ('post-self', 'idol-1', 'source-self', '微博', '本人动态', "
+                + "        'https://example.com/1', now(), now()),"
+                + "       ('post-fans', 'idol-1', 'source-fanclub', '微博', '应援集资', "
+                + "        'https://example.com/2', now(), now())");
+        UUID muter = insertUser("openid-muter", null, "tpl-1", 3);
+        UUID keeper = insertUser("openid-keeper", null, "tpl-1", 3);
+        guard(muter, "idol-1");
+        guard(keeper, "idol-1");
+
+        JdbcClient client = JdbcClient.create(testDataSource);
+        JdbcIdolRadarStore api = new JdbcIdolRadarStore(client, new CursorCodec());
+        WorkerStore worker = new WorkerStore(
+                jdbc, new TransactionTemplate(new DataSourceTransactionManager(testDataSource)));
+
+        // 未做任何设置时两人都在候选名单里，行为与加入该过滤之前一致。
+        assertEquals(2, worker.loadEligibleUsers("post-fans", "idol-1", "tpl-1", null, 50).size());
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> sources = (List<Map<String, Object>>) api.listMySources("openid-muter").get("sources");
+        assertEquals(List.of("示例 · 微博", "示例后援会 · 微博"),
+                sources.stream().map(source -> source.get("displayName")).toList());
+        assertTrue(sources.stream().noneMatch(source -> source.containsKey("rssUrl")),
+                "内部抓取地址不得随小程序接口下发");
+        assertEquals(List.of(false, false), sources.stream().map(source -> source.get("muted")).toList());
+
+        api.setSourceMuted("openid-muter", "source-fanclub", true);
+
+        // 被关闭来源的动态不再推给该用户，其他人和其他来源都不受影响。
+        assertEquals(List.of(keeper),
+                worker.loadEligibleUsers("post-fans", "idol-1", "tpl-1", null, 50)
+                        .stream().map(WorkerModels.UserTarget::id).toList());
+        assertEquals(2, worker.loadEligibleUsers("post-self", "idol-1", "tpl-1", null, 50).size());
+        // 额度扣减同样拦得住：候选名单之后才关闭来源的竞态不应漏出一条推送。
+        assertFalse(worker.claimDelivery("post-fans", muter, "idol-1", "tpl-1"));
+        assertTrue(worker.claimDelivery("post-fans", keeper, "idol-1", "tpl-1"));
+
+        // 重新开启后立即恢复接收。
+        api.setSourceMuted("openid-muter", "source-fanclub", false);
+        assertEquals(1, worker.loadEligibleUsers("post-fans", "idol-1", "tpl-1", null, 50).size());
+
+        // 换守护对象后屏蔽设置保留：换回来时用户的选择还在，且记录本身极小。
+        api.setSourceMuted("openid-muter", "source-fanclub", true);
+        api.setIdol("openid-muter", "idol-2");
+        assertEquals(1L, jdbc.queryForObject(
+                "SELECT count(*) FROM idr_user_source_mute WHERE user_id = ?", Long.class, muter));
+        api.setIdol("openid-muter", "idol-1");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> afterSwitch =
+                (List<Map<String, Object>>) api.listMySources("openid-muter").get("sources");
+        assertEquals(List.of(false, true), afterSwitch.stream().map(source -> source.get("muted")).toList());
+    }
+
+    @Test
+    @Order(18)
+    void mutingRejectsSourcesOutsideTheCurrentGuardedIdol() {
+        jdbc.update("INSERT INTO idr_idol (id, name) VALUES ('idol-1', '示例'), ('idol-2', '其他')");
+        jdbc.update("INSERT INTO idr_source (id, idol_id, rss_url, display_name) VALUES "
+                + "('source-1', 'idol-1', 'https://example.com/1.xml', '示例 · 微博'),"
+                + "('source-2', 'idol-2', 'https://example.com/2.xml', '其他 · 微博')");
+        UUID userId = insertUser("openid-1", null, "tpl-1", 3);
+        guard(userId, "idol-1");
+
+        JdbcIdolRadarStore api = new JdbcIdolRadarStore(JdbcClient.create(testDataSource), new CursorCodec());
+
+        // 不校验归属的话，任何人都能往关联表塞任意 source_id：既能探测来源是否存在，
+        // 也会留下换到该 idol 后突然静默的脏记录。
+        AppException foreign = assertThrows(
+                AppException.class, () -> api.setSourceMuted("openid-1", "source-2", true));
+        assertEquals("SOURCE_NOT_FOUND", foreign.code());
+        AppException missing = assertThrows(
+                AppException.class, () -> api.setSourceMuted("openid-1", "source-nope", true));
+        assertEquals("SOURCE_NOT_FOUND", missing.code());
+        assertEquals(0L, jdbc.queryForObject(
+                "SELECT count(*) FROM idr_user_source_mute WHERE user_id = ?", Long.class, userId));
+    }
+
+    @Test
+    @Order(19)
+    void mutedSourceFilterStillUsesIndexesAtScale() {
+        jdbc.update("INSERT INTO idr_idol (id, name) VALUES ('idol-1', '示例')");
+        jdbc.update("INSERT INTO idr_source (id, idol_id, rss_url, display_name) "
+                + "VALUES ('source-1', 'idol-1', 'https://example.com/feed.xml', '示例 · 微博')");
+        jdbc.update("INSERT INTO idr_post (id, idol_id, source_id, title, link, published_at, fetched_at) "
+                + "VALUES ('post-1', 'idol-1', 'source-1', '动态一', 'https://example.com/1', now(), now())");
+        jdbc.update("INSERT INTO idr_user (openid, subscribe_template_id, subscribe_quota) "
+                + "SELECT 'openid-' || i, 'tpl-1', 3 FROM generate_series(1, 5000) AS i");
+        jdbc.update("INSERT INTO idr_user_guard (user_id, idol_id, guarding_since) "
+                + "SELECT id, 'idol-1', now() FROM idr_user");
+        jdbc.update("INSERT INTO idr_user_source_mute (user_id, source_id) "
+                + "SELECT id, 'source-1' FROM idr_user WHERE random() < 0.3");
+        jdbc.execute("ANALYZE idr_user");
+        jdbc.execute("ANALYZE idr_user_guard");
+        jdbc.execute("ANALYZE idr_user_source_mute");
+
+        String plan = String.join("\n", jdbc.queryForList("""
+                EXPLAIN SELECT u.id, u.openid
+                FROM idr_user_guard g
+                JOIN idr_user u ON u.id = g.user_id
+                LEFT JOIN idr_notification_delivery d
+                  ON d.post_id = 'post-1' AND d.user_id = u.id
+                WHERE g.idol_id = 'idol-1'
+                  AND u.subscribe_template_id = 'tpl-1'
+                  AND u.subscribe_quota > 0
+                  AND d.user_id IS NULL
+                  AND NOT EXISTS (
+                    SELECT 1 FROM idr_user_source_mute m
+                    WHERE m.user_id = u.id
+                      AND m.source_id = (SELECT source_id FROM idr_post WHERE id = 'post-1')
+                  )
+                ORDER BY u.id ASC
+                LIMIT 50
+                """, String.class));
+
+        // 加入屏蔽过滤后不能退化成顺序扫描屏蔽表：那会随用户量线性变慢。
+        assertFalse(plan.contains("Seq Scan on idr_user_source_mute"), plan);
+        assertTrue(plan.contains("idx_idr_user_guard_idol_id_user_id"), plan);
+    }
+
     private UUID insertUser(String openid, String legacyIdolId, String templateId, int quota) {
         return jdbc.queryForObject(
                 "INSERT INTO idr_user (openid, idol_id, subscribe_template_id, subscribe_quota) "

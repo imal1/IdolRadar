@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -176,5 +177,33 @@ class ApiControllerTest {
                         .content("{"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("INVALID_INPUT"));
+    }
+
+    @Test
+    void sourceToggleRoutesCarryOpenIdAndMuteFlagThrough() throws Exception {
+        AuthService.Identity identity = new AuthService.Identity(
+                UUID.randomUUID(), "openid-1", Instant.now().plus(Duration.ofDays(1)));
+        when(auth.authenticate(anyString())).thenReturn(identity);
+        when(store.listMySources("openid-1")).thenReturn(Map.of("sources", List.of()));
+        when(store.setSourceMuted("openid-1", "source-1", true)).thenReturn(
+                Map.of("sourceId", "source-1", "muted", true));
+        when(store.setSourceMuted("openid-1", "source-1", false)).thenReturn(
+                Map.of("sourceId", "source-1", "muted", false));
+
+        protectedMvc.perform(get("/v1/me/sources").header("Authorization", "Bearer " + "t".repeat(43)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.sources").isArray());
+        protectedMvc.perform(put("/v1/me/sources/source-1/mute")
+                        .header("Authorization", "Bearer " + "t".repeat(43)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.muted").value(true));
+        protectedMvc.perform(delete("/v1/me/sources/source-1/mute")
+                        .header("Authorization", "Bearer " + "t".repeat(43)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.muted").value(false));
+
+        // PUT 与 DELETE 必须映射到同一个方法的两种取值，否则开关会只走得通一个方向。
+        verify(store).setSourceMuted("openid-1", "source-1", true);
+        verify(store).setSourceMuted("openid-1", "source-1", false);
     }
 }
