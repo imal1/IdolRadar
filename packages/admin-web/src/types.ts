@@ -127,3 +127,34 @@ export interface AuditEntry {
   before: string;
   after: string;
 }
+
+/** 核心指标：注册队列漏斗、24 小时内回访率与按自然日的趋势序列。 */
+export interface MetricsFunnel {
+  newUsers: number;
+  guarded: number;
+  subscribed: number;
+  guardRate: number;
+  subscribeRate: number;
+  conversionRate: number;
+}
+
+export interface MetricsDelivery {
+  sent: number;
+  openedWithin24h: number;
+  openRate: number;
+}
+
+export interface MetricsTrendPoint {
+  date: string;
+  newUsers: number;
+  guarded: number;
+  subscribed: number;
+  opened: number;
+}
+
+export interface CoreMetrics {
+  rangeDays: number;
+  funnel: MetricsFunnel;
+  delivery: MetricsDelivery;
+  trend: MetricsTrendPoint[];
+}
