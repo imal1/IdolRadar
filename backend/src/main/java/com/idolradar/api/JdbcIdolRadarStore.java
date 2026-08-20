@@ -342,6 +342,76 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
         return normalized;
     }
 
+    @Override
+    public Map<String, Object> listMySources(String openId) {
+        UserRow user = requireUser(openId);
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (user.idolId() == null) {
+            result.put("sources", List.of());
+            return result;
+        }
+        // rss_url 是内部抓取地址，属于运维配置，绝不能随小程序接口下发。
+        List<Map<String, Object>> sources = jdbc.sql(
+                        "SELECT s.id, s.display_name, s.channel, "
+                                + "(m.source_id IS NOT NULL) AS muted "
+                                + "FROM idr_source s "
+                                + "LEFT JOIN idr_user_source_mute m "
+                                + "  ON m.source_id = s.id AND m.user_id = :userId "
+                                + "WHERE s.idol_id = :idolId AND s.enabled = TRUE "
+                                + "ORDER BY s.display_name ASC, s.id ASC")
+                .param("userId", user.id())
+                .param("idolId", user.idolId())
+                .query((resultSet, rowNumber) -> {
+                    Map<String, Object> source = new LinkedHashMap<>();
+                    source.put("_id", resultSet.getString("id"));
+                    source.put("displayName", resultSet.getString("display_name"));
+                    source.put("channel", resultSet.getString("channel"));
+                    source.put("muted", resultSet.getBoolean("muted"));
+                    return source;
+                })
+                .list();
+        result.put("sources", sources);
+        return result;
+    }
+
+    @Override
+    @Transactional
+    public Map<String, Object> setSourceMuted(String openId, String sourceId, boolean muted) {
+        validateId(sourceId, "sourceId");
+        UserRow user = requireUser(openId);
+        // 只允许操作当前守护 idol 名下的启用来源：否则任何人都能往关联表里塞任意 source_id，
+        // 既能探测来源是否存在，也会留下换回该 idol 后突然静默的脏记录。
+        boolean belongsToCurrentIdol = user.idolId() != null && jdbc.sql(
+                        "SELECT COUNT(*)::integer FROM idr_source "
+                                + "WHERE id = :sourceId AND idol_id = :idolId AND enabled = TRUE")
+                .param("sourceId", sourceId)
+                .param("idolId", user.idolId())
+                .query(Integer.class)
+                .single() > 0;
+        if (!belongsToCurrentIdol) {
+            throw new AppException(HttpStatus.NOT_FOUND, "SOURCE_NOT_FOUND", "来源不存在或不属于当前守护对象");
+        }
+
+        if (muted) {
+            // 存「被关掉的」而非「已订阅的」：重复关闭是幂等的，新增来源也无需为每个用户回填。
+            jdbc.sql("INSERT INTO idr_user_source_mute (user_id, source_id) "
+                            + "VALUES (:userId, :sourceId) ON CONFLICT DO NOTHING")
+                    .param("userId", user.id())
+                    .param("sourceId", sourceId)
+                    .update();
+        } else {
+            jdbc.sql("DELETE FROM idr_user_source_mute WHERE user_id = :userId AND source_id = :sourceId")
+                    .param("userId", user.id())
+                    .param("sourceId", sourceId)
+                    .update();
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("sourceId", sourceId);
+        result.put("muted", muted);
+        return result;
+    }
+
     private UserRow requireUser(String openId) {
         // 用户只能在登录验证后创建；API 读取绝不能为任意身份建档。
         return findUser(openId).orElseThrow(() -> new AppException(

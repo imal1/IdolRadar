@@ -171,11 +171,18 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
                       AND u.subscribe_template_id = ?
                       AND u.subscribe_quota > 0
                       AND d.user_id IS NULL
+                      -- 用户关闭的来源不再推送。存的是「被关掉的」，因此没有记录即默认接收，
+                      -- 新增来源自动对所有人生效，无须为每个用户回填订阅记录。
+                      AND NOT EXISTS (
+                        SELECT 1 FROM idr_user_source_mute m
+                        WHERE m.user_id = u.id
+                          AND m.source_id = (SELECT source_id FROM idr_post WHERE id = ?)
+                      )
                     ORDER BY u.id ASC
                     LIMIT ?
                     """,
                     WorkerStore::userTarget,
-                    postId, idolId, templateId, limit);
+                    postId, idolId, templateId, postId, limit);
         }
         return jdbc.query("""
                 SELECT u.id, u.openid
@@ -188,11 +195,16 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
                   AND u.subscribe_quota > 0
                   AND d.user_id IS NULL
                   AND u.id > ?
+                  AND NOT EXISTS (
+                    SELECT 1 FROM idr_user_source_mute m
+                    WHERE m.user_id = u.id
+                      AND m.source_id = (SELECT source_id FROM idr_post WHERE id = ?)
+                  )
                 ORDER BY u.id ASC
                 LIMIT ?
                 """,
                 WorkerStore::userTarget,
-                postId, idolId, templateId, afterId, limit);
+                postId, idolId, templateId, afterId, postId, limit);
     }
 
     /** 同一事务创建幂等 delivery，并扣减匹配用户、idol、模板的一次额度。 */
@@ -217,9 +229,16 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
                         SELECT 1 FROM idr_user_guard g
                         WHERE g.user_id = idr_user.id AND g.idol_id = ?
                       )
+                      -- 候选名单已过滤屏蔽来源，但用户可能正好在选中之后、扣额度之前关掉它。
+                      -- 这里再判一次，让「关掉即不再推送」成为确定结论而不是大概率。
+                      AND NOT EXISTS (
+                        SELECT 1 FROM idr_user_source_mute m
+                        WHERE m.user_id = idr_user.id
+                          AND m.source_id = (SELECT source_id FROM idr_post WHERE id = ?)
+                      )
                       AND subscribe_template_id = ?
                       AND subscribe_quota > 0
-                    """, userId, idolId, templateId);
+                    """, userId, idolId, postId, templateId);
             if (reserved != 1) {
                 status.setRollbackOnly();
                 return false;
@@ -378,15 +397,23 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
                            EXISTS (
                              SELECT 1 FROM idr_user_guard g
                              WHERE g.user_id = u.id AND g.idol_id = ?
-                           ) AS guards_idol
+                           ) AS guards_idol,
+                           EXISTS (
+                             SELECT 1 FROM idr_user_source_mute m
+                             WHERE m.user_id = u.id
+                               AND m.source_id = (SELECT source_id FROM idr_post WHERE id = ?)
+                           ) AS source_muted
                     FROM idr_user u WHERE u.id = ? FOR UPDATE
                     """,
                     (result, row) -> new UserSubscription(
                             result.getBoolean("guards_idol"),
+                            result.getBoolean("source_muted"),
                             result.getString("subscribe_template_id")),
-                    candidate.post().idolId(), userId).stream().findFirst();
+                    candidate.post().idolId(), postId, userId).stream().findFirst();
+            // 重试可能在用户关掉来源很久之后才到期；订阅意图变了就不该继续投递。
             boolean compatible = subscription.isPresent()
                     && subscription.get().guardsIdol()
+                    && !subscription.get().sourceMuted()
                     && templateId.equals(subscription.get().templateId())
                     && templateId.equals(delivery.templateId());
             boolean exhausted = delivery.attemptCount() >= maxAttempts;
@@ -590,5 +617,5 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
     }
 
     private record DeliveryState(int attemptCount, boolean quotaReserved, String templateId) {}
-    private record UserSubscription(boolean guardsIdol, String templateId) {}
+    private record UserSubscription(boolean guardsIdol, boolean sourceMuted, String templateId) {}
 }
