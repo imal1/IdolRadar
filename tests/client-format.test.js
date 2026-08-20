@@ -50,9 +50,26 @@ test('normalizePost exposes stable feed view fields and source aliases', () => {
     summary: '摘要',
     link: 'https://example.com/post/1',
     channel: '微博',
+    sourceName: '微博',
     publishedAt,
     timeText: '18 分钟前'
   });
+});
+
+test('normalizePost prefers the source display name over the channel label', () => {
+  const publishedAt = '2026-07-22T11:42:00+08:00';
+  const result = normalizePost({
+    _id: 'post-3',
+    title: '应援集资进度',
+    sourceName: '  王一博后援会 · 微博  ',
+    channel: '微博',
+    publishedAt
+  }, now);
+
+  // 同一 idol 下本人与后援会的 channel 都是「微博」，只有展示名能把两者区分开。
+  assert.equal(result.sourceName, '王一博后援会 · 微博');
+  // channel 保留原值：动态卡片的标签配色仍按渠道判定，不受展示名影响。
+  assert.equal(result.channel, '微博');
 });
 
 test('normalizePost applies documented fallbacks without inventing a link', () => {
@@ -63,6 +80,7 @@ test('normalizePost applies documented fallbacks without inventing a link', () =
     summary: '新的动态',
     link: '',
     channel: '动态',
+    sourceName: '动态',
     publishedAt: fetchedAt,
     timeText: '昨天 20:14'
   });

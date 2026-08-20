@@ -383,12 +383,16 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
     private FeedPage queryFeedPage(String idolId, String rawCursor) {
         CursorCodec.Cursor cursor = cursorCodec.decode(rawCursor);
         // 元组键集分页在动态时间相同时仍保持确定性，并避免 offset 漂移。
+        // 列名必须带表别名：idr_post 与 idr_source 都有 id，不限定会直接报歧义。
         String cursorCondition = cursor == null
                 ? ""
-                : " AND (published_at, id) < (:publishedAt, :postId)";
+                : " AND (p.published_at, p.id) < (:publishedAt, :postId)";
+        // LEFT JOIN 而非 INNER：来源被停用或数据异常时，动态本身仍应正常展示。
         JdbcClient.StatementSpec statement = jdbc.sql(
-                        "SELECT * FROM idr_post WHERE idol_id = :idolId" + cursorCondition
-                                + " ORDER BY published_at DESC, id DESC LIMIT :limit")
+                        "SELECT p.*, s.display_name AS source_display_name "
+                                + "FROM idr_post p LEFT JOIN idr_source s ON s.id = p.source_id "
+                                + "WHERE p.idol_id = :idolId" + cursorCondition
+                                + " ORDER BY p.published_at DESC, p.id DESC LIMIT :limit")
                 .param("idolId", idolId)
                 .param("limit", PAGE_SIZE + 1);
         if (cursor != null) {
@@ -459,6 +463,8 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
         result.put("_id", post.id());
         result.put("idolId", post.idolId());
         result.put("sourceId", post.sourceId());
+        // 同一 idol 下「本人的微博」和「后援会的微博」channel 相同，只有展示名能区分。
+        result.put("sourceName", post.sourceName());
         result.put("channel", post.channel());
         result.put("title", post.title());
         result.put("summary", post.summary());
@@ -495,6 +501,7 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
                 resultSet.getString("id"),
                 resultSet.getString("idol_id"),
                 resultSet.getString("source_id"),
+                resultSet.getString("source_display_name"),
                 Optional.ofNullable(resultSet.getString("channel")).orElse("RSS"),
                 resultSet.getString("title"),
                 Optional.ofNullable(resultSet.getString("summary")).orElse(""),
@@ -553,6 +560,7 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
             String id,
             String idolId,
             String sourceId,
+            String sourceName,
             String channel,
             String title,
             String summary,

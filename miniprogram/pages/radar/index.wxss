@@ -301,10 +301,15 @@
 
 .caught-tag,
 .channel-tag {
-  flex: none;
+  flex: 0 1 auto;
   padding: 6rpx 15rpx;
   border-radius: 15rpx;
   font-size: 21rpx;
+  /* 展示名可能长到「王一博后援会 · 微博」，不截断会把发布时间挤出卡片。 */
+  max-width: 320rpx;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .caught-tag {

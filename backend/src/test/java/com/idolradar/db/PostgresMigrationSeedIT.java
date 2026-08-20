@@ -2,6 +2,7 @@ package com.idolradar.db;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -27,6 +28,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Stream;
 import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.MigrationVersion;
@@ -812,6 +814,73 @@ class PostgresMigrationSeedIT {
         Map<String, Object> idol = (Map<String, Object>) home.get("idol");
         // 序列化后的 idol 主键是 _id，沿用小程序侧的字段约定。
         return idol == null ? null : (String) idol.get("_id");
+    }
+
+    @Test
+    @Order(16)
+    void feedExposesSourceDisplayNameAndKeepsCursorPagingAfterTheJoin() {
+        jdbc.update("INSERT INTO idr_idol (id, name) VALUES ('idol-1', '示例')");
+        // 同一 idol、同一渠道下的两个来源：只有展示名能把本人和后援会区分开。
+        jdbc.update("INSERT INTO idr_source (id, idol_id, rss_url, display_name, channel) VALUES "
+                + "('source-self', 'idol-1', 'https://example.com/self.xml', '示例 · 微博', '微博'),"
+                + "('source-fanclub', 'idol-1', 'https://example.com/fans.xml', '示例后援会 · 微博', '微博')");
+        jdbc.update("INSERT INTO idr_post (id, idol_id, source_id, channel, title, link, published_at, fetched_at) "
+                + "VALUES ('post-1', 'idol-1', 'source-self', '微博', '本人动态', "
+                + "        'https://example.com/1', now() - interval '2 hours', now()),"
+                + "       ('post-2', 'idol-1', 'source-fanclub', '微博', '应援集资', "
+                + "        'https://example.com/2', now() - interval '1 hour', now())");
+        UUID userId = insertUser("openid-1", null, "tpl-1", 3);
+        guard(userId, "idol-1");
+
+        JdbcIdolRadarStore api = new JdbcIdolRadarStore(JdbcClient.create(testDataSource), new CursorCodec());
+        Map<String, Object> feed = api.getFeed("openid-1", null);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> posts = (List<Map<String, Object>>) feed.get("posts");
+        assertEquals(2, posts.size());
+        // 渠道相同，展示名不同——这正是来源开关列表要依赖的区分能力。
+        assertEquals(List.of("微博", "微博"), posts.stream().map(post -> post.get("channel")).toList());
+        assertEquals(
+                List.of("示例后援会 · 微博", "示例 · 微博"),
+                posts.stream().map(post -> post.get("sourceName")).toList(),
+                "按发布时间倒序，后援会那条更新，排在前面");
+
+        // JOIN 之后 idr_post 与 idr_source 都有 id 列，游标条件若不带表别名会直接报歧义，
+        // 而该条件只在翻第二页时才拼进 SQL——必须造出真实的第二页，否则这段等于没测。
+        jdbc.update("INSERT INTO idr_post (id, idol_id, source_id, channel, title, link, published_at, fetched_at) "
+                + "SELECT 'bulk-' || i, 'idol-1', 'source-self', '微博', '批量动态 ' || i, "
+                // 批量数据一律早于上面那两条，避免把它们挤出第一页、让后续断言失去针对性。
+                + "       'https://example.com/bulk/' || i, now() - ((i + 2) || ' hours')::interval, now() "
+                + "FROM generate_series(1, 25) AS i");
+
+        Map<String, Object> firstPage = api.getFeed("openid-1", null);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> firstPosts = (List<Map<String, Object>>) firstPage.get("posts");
+        String cursor = (String) firstPage.get("nextCursor");
+        assertEquals(Boolean.TRUE, firstPage.get("hasMore"));
+        assertNotNull(cursor, "满页时必须给出游标，否则第二页永远取不到");
+
+        Map<String, Object> secondPage = api.getFeed("openid-1", cursor);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> secondPosts = (List<Map<String, Object>>) secondPage.get("posts");
+        assertFalse(secondPosts.isEmpty());
+        // 两页之间不重不漏：合起来的去重数量应等于两页条数之和。
+        List<Object> firstIds = firstPosts.stream().map(post -> post.get("_id")).toList();
+        List<Object> secondIds = secondPosts.stream().map(post -> post.get("_id")).toList();
+        assertEquals(
+                firstIds.size() + secondIds.size(),
+                Stream.concat(firstIds.stream(), secondIds.stream()).distinct().count());
+        // 第二页同样带得出展示名，JOIN 没有在游标分支上掉链子。
+        assertTrue(secondPosts.stream().allMatch(post -> post.get("sourceName") != null));
+
+        // 来源被停用后动态仍要能读出来，展示名也不应丢失。
+        jdbc.update("UPDATE idr_source SET enabled = FALSE WHERE id = 'source-fanclub'");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> afterDisable =
+                (List<Map<String, Object>>) api.getFeed("openid-1", null).get("posts");
+        assertEquals("示例后援会 · 微博", afterDisable.stream()
+                .filter(post -> "post-2".equals(post.get("_id")))
+                .findFirst().orElseThrow().get("sourceName"));
     }
 
     private UUID insertUser(String openid, String legacyIdolId, String templateId, int quota) {
