@@ -16,7 +16,12 @@ var ACTIONS = {
   listMySources: { method: 'GET', path: '/v1/me/sources' },
   // :sourceId 由 params 声明并从 payload 取值；页面仍然不接触 URL 拼接。
   muteSource: { method: 'PUT', path: '/v1/me/sources/:sourceId/mute', params: ['sourceId'] },
-  unmuteSource: { method: 'DELETE', path: '/v1/me/sources/:sourceId/mute', params: ['sourceId'] }
+  unmuteSource: { method: 'DELETE', path: '/v1/me/sources/:sourceId/mute', params: ['sourceId'] },
+  reportNotificationOpen: {
+    method: 'POST',
+    path: '/v1/notification-deliveries/:postId/open',
+    params: ['postId']
+  }
 };
 
 function createError(detail, fallbackCode) {

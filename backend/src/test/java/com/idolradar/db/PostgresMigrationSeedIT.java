@@ -1009,6 +1009,87 @@ class PostgresMigrationSeedIT {
         assertTrue(plan.contains("idx_idr_user_guard_idol_id_user_id"), plan);
     }
 
+    @Test
+    @Order(20)
+    void notificationOpenIsAttributedToTheDeliveryAndDistinguishesFirstFromRepeat() {
+        jdbc.update("INSERT INTO idr_idol (id, name) VALUES ('idol-1', '示例')");
+        jdbc.update("INSERT INTO idr_source (id, idol_id, rss_url, display_name) "
+                + "VALUES ('source-1', 'idol-1', 'https://example.com/feed.xml', '示例 · 微博')");
+        jdbc.update("INSERT INTO idr_post (id, idol_id, source_id, title, link, published_at, fetched_at) "
+                + "VALUES ('post-1', 'idol-1', 'source-1', '动态一', 'https://example.com/1', now(), now()),"
+                + "       ('post-2', 'idol-1', 'source-1', '动态二', 'https://example.com/2', now(), now())");
+        UUID opener = insertUser("openid-opener", null, "tpl-1", 3);
+        UUID bystander = insertUser("openid-bystander", null, "tpl-1", 3);
+        guard(opener, "idol-1");
+        guard(bystander, "idol-1");
+        // 只有 opener 收到过 post-1 的推送；bystander 收到的是 post-2。
+        jdbc.update("INSERT INTO idr_notification_delivery (post_id, user_id, template_id, status) "
+                + "VALUES ('post-1', ?, 'tpl-1', 'sent'), ('post-2', ?, 'tpl-1', 'sent')", opener, bystander);
+
+        JdbcIdolRadarStore api = new JdbcIdolRadarStore(JdbcClient.create(testDataSource), new CursorCodec());
+
+        Map<String, Object> first = api.recordNotificationOpen("openid-opener", "post-1");
+        assertEquals(Boolean.TRUE, first.get("recorded"));
+        assertEquals(Boolean.TRUE, first.get("firstOpen"));
+        assertEquals(1, first.get("openCount"));
+
+        Map<String, Object> repeat = api.recordNotificationOpen("openid-opener", "post-1");
+        assertEquals(Boolean.FALSE, repeat.get("firstOpen"), "重复打开必须能与首次区分开");
+        assertEquals(2, repeat.get("openCount"));
+
+        // 首次打开时间只写一次，最近打开时间随每次刷新。
+        assertEquals(1L, jdbc.queryForObject(
+                "SELECT count(*) FROM idr_notification_delivery "
+                        + "WHERE post_id = 'post-1' AND user_id = ? "
+                        + "AND first_opened_at IS NOT NULL AND last_opened_at >= first_opened_at "
+                        + "AND open_count = 2",
+                Long.class, opener));
+
+        // 没有收到过该条推送的用户上报无效：不建行、不计数，也不返回错误。
+        Map<String, Object> foreign = api.recordNotificationOpen("openid-bystander", "post-1");
+        assertEquals(Boolean.FALSE, foreign.get("recorded"));
+        assertEquals(0L, jdbc.queryForObject(
+                "SELECT count(*) FROM idr_notification_delivery WHERE post_id = 'post-1' AND user_id = ?",
+                Long.class, bystander));
+
+        // 别人的投递不受影响，归因严格落在 (post_id, user_id) 上。
+        assertEquals(0, jdbc.queryForObject(
+                "SELECT open_count FROM idr_notification_delivery WHERE post_id = 'post-2' AND user_id = ?",
+                Integer.class, bystander));
+
+        // 不存在的动态同样静默忽略，不能让调用方借错误码探测动态是否存在。
+        assertEquals(Boolean.FALSE, api.recordNotificationOpen("openid-opener", "post-nope").get("recorded"));
+    }
+
+    @Test
+    @Order(21)
+    void deliveryDashboardOpenRateReflectsReportedOpens() {
+        jdbc.update("INSERT INTO idr_idol (id, name) VALUES ('idol-1', '示例')");
+        jdbc.update("INSERT INTO idr_source (id, idol_id, rss_url, display_name) "
+                + "VALUES ('source-1', 'idol-1', 'https://example.com/feed.xml', '示例 · 微博')");
+        jdbc.update("INSERT INTO idr_post (id, idol_id, source_id, title, link, published_at, fetched_at) "
+                + "VALUES ('post-1', 'idol-1', 'source-1', '动态一', 'https://example.com/1', now(), now())");
+        UUID opener = insertUser("openid-opener", null, "tpl-1", 3);
+        UUID silent = insertUser("openid-silent", null, "tpl-1", 3);
+        jdbc.update("INSERT INTO idr_notification_delivery (post_id, user_id, template_id, status) "
+                + "VALUES ('post-1', ?, 'tpl-1', 'sent'), ('post-1', ?, 'tpl-1', 'sent')", opener, silent);
+
+        JdbcClient client = JdbcClient.create(testDataSource);
+        JdbcIdolRadarStore api = new JdbcIdolRadarStore(client, new CursorCodec());
+        AdminDeliveryStore board = new AdminDeliveryStore(client);
+
+        // 上报之前，管理端看板的回访率恒为 0——此前没有任何代码写这些字段。
+        @SuppressWarnings("unchecked")
+        Map<String, Object> before = (Map<String, Object>) board.listDeliveries(null, null, 24).get("summary");
+        assertEquals(0.0, before.get("openRate"));
+
+        api.recordNotificationOpen("openid-opener", "post-1");
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> after = (Map<String, Object>) board.listDeliveries(null, null, 24).get("summary");
+        assertEquals(50.0, after.get("openRate"), "两条已发送投递中有一条被打开");
+    }
+
     private UUID insertUser(String openid, String legacyIdolId, String templateId, int quota) {
         return jdbc.queryForObject(
                 "INSERT INTO idr_user (openid, idol_id, subscribe_template_id, subscribe_quota) "
