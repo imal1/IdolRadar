@@ -8,7 +8,10 @@ COPY maven-settings.docker.xml ./maven-settings.xml
 
 COPY src ./src
 # BuildKit 缓存 Maven 仓库，后续升级源码不重复下载全部依赖。
-ARG MAVEN_MIRROR_URL=https://mirrors.cloud.tencent.com/nexus/repository/maven-public/
+# 默认走 Maven Central：镜像统一在 GitHub runner（境外）构建，且国内公共代理对新版本
+# 依赖存在同步延迟（如 spring-boot 4.1.0 缺失会直接构建失败）。国内本地构建经 compose
+# 传入 MAVEN_MIRROR_URL 覆盖成腾讯源。
+ARG MAVEN_MIRROR_URL=https://repo.maven.apache.org/maven2/
 RUN --mount=type=cache,target=/root/.m2 \
     MAVEN_MIRROR_URL="$MAVEN_MIRROR_URL" \
     mvn -s /workspace/maven-settings.xml -B -q -DskipTests package

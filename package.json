@@ -8,7 +8,7 @@
   },
   "packageManager": "pnpm@10.34.5+sha512.a4ee05f2f73658255bd6a89859c065a45c28a57daefae2c893a168ee2b73168c37b91e83e57ea67654ad03f03031746430e8bce38e362e042605fb8abc80192e",
   "scripts": {
-    "check": "pnpm run check:syntax && pnpm run typecheck && pnpm test && pnpm run test:admin && pnpm run admin:build && pnpm run validate",
+    "check": "pnpm run check:syntax && pnpm run typecheck && pnpm run test:admin && pnpm run admin:build && pnpm test && pnpm run validate",
     "check:syntax": "node scripts/check-syntax.js",
     "typecheck": "pnpm --filter @idolradar/admin-web typecheck",
     "test": "node scripts/run-node-tests.mjs",
