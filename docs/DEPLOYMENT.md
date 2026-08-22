@@ -188,6 +188,14 @@ docker compose logs --tail=100 migrate seed app worker rsshub
 
 走 GitHub Actions 发布时无需手动执行：发布流程已包含该步骤。
 
+含破坏性 migration（如 V7 删除 `idr_user.idol_id`）的版本要先停旧容器再升级，
+否则 `migrate` 已改完表、旧 `app` 容器还没被替换的那几秒内，写旧列的接口会直接报错：
+
+```bash
+docker compose stop app worker
+docker compose up -d --build
+```
+
 启动顺序由 Compose 保证：
 
 1. PostgreSQL、Redis、RSSHub 缓存健康。

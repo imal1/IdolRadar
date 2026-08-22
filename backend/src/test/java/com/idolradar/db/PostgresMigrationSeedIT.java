@@ -158,6 +158,14 @@ class PostgresMigrationSeedIT {
                 "nickname",
                 "avatar_url",
                 "profile_authorized_at")));
+        // V7 收尾：单值守护字段与其上两个索引必须彻底消失，否则守护关系又会出现第二个事实来源。
+        assertFalse(userColumns.contains("idol_id"), userColumns.toString());
+        assertFalse(userColumns.contains("guarding_since"), userColumns.toString());
+        assertEquals(0, jdbc.queryForObject(
+                "SELECT count(*)::integer FROM pg_indexes "
+                        + "WHERE schemaname = current_schema() AND indexname IN "
+                        + "('idx_idr_user_idol_id_subscribe_quota_id', 'idx_idr_user_notification_targets')",
+                Integer.class));
 
         List<String> idolRequestColumns = jdbc.queryForList(
                 "SELECT column_name FROM information_schema.columns "
@@ -425,8 +433,10 @@ class PostgresMigrationSeedIT {
                     "SELECT count(*) FROM idr_notification_outbox WHERE post_id = 'post-demo'", Long.class));
             assertEquals(1L, cleanup.queryForObject(
                     "SELECT count(*) FROM idr_idol WHERE id = 'idol-real'", Long.class));
-            assertEquals(1L, cleanup.queryForObject(
-                    "SELECT count(*) FROM idr_user WHERE id = ? AND idol_id IS NULL AND guarding_since IS NULL",
+            // 旧单值字段已由 V7 删除，V4「解除守护」的效果改用守护关联表验证：
+            // V5 只按当时非空的 idol_id 回填 idr_user_guard，被 V4 清空的 demo 用户因此不应有守护关系。
+            assertEquals(0L, cleanup.queryForObject(
+                    "SELECT count(*) FROM idr_user_guard WHERE user_id = ?",
                     Long.class,
                     userId));
             assertEquals(1L, cleanup.queryForObject(
@@ -529,9 +539,7 @@ class PostgresMigrationSeedIT {
         jdbc.update("INSERT INTO idr_source (id, idol_id, rss_url, display_name) "
                 + "VALUES ('source-1', 'idol-1', 'https://example.com/feed.xml', '示例源')");
         UUID userId = jdbc.queryForObject(
-                "INSERT INTO idr_user (openid, idol_id, guarding_since) "
-                        + "VALUES ('openid-1', 'idol-1', now()) RETURNING id",
-                UUID.class);
+                "INSERT INTO idr_user (openid) VALUES ('openid-1') RETURNING id", UUID.class);
         jdbc.update("INSERT INTO idr_user_guard (user_id, idol_id, guarding_since) VALUES (?, 'idol-1', now())",
                 userId);
 
@@ -570,14 +578,11 @@ class PostgresMigrationSeedIT {
         jdbc.update("INSERT INTO idr_post (id, idol_id, source_id, title, link, published_at, fetched_at) "
                 + "VALUES ('post-1', 'idol-1', 'source-1', '动态一', 'https://example.com/1', now(), now())");
         UUID userId = jdbc.queryForObject(
-                "INSERT INTO idr_user (openid, idol_id) VALUES ('openid-1', 'idol-1') RETURNING id",
-                UUID.class);
+                "INSERT INTO idr_user (openid) VALUES ('openid-1') RETURNING id", UUID.class);
         UUID otherUserId = jdbc.queryForObject(
-                "INSERT INTO idr_user (openid, idol_id) VALUES ('openid-2', 'idol-1') RETURNING id",
-                UUID.class);
+                "INSERT INTO idr_user (openid) VALUES ('openid-2') RETURNING id", UUID.class);
         UUID thirdUserId = jdbc.queryForObject(
-                "INSERT INTO idr_user (openid, idol_id) VALUES ('openid-3', 'idol-1') RETURNING id",
-                UUID.class);
+                "INSERT INTO idr_user (openid) VALUES ('openid-3') RETURNING id", UUID.class);
         jdbc.update("INSERT INTO idr_notification_delivery "
                 + "(post_id, user_id, status, attempt_count, first_opened_at, last_opened_at, open_count) "
                 + "VALUES ('post-1', ?, 'sent', 1, now(), now(), 2)", userId);
@@ -628,7 +633,7 @@ class PostgresMigrationSeedIT {
 
     @Test
     @Order(11)
-    void pushTargetsComeFromGuardTableAndIgnoreLegacyUserColumn() {
+    void pushTargetsComeFromGuardTableOnly() {
         jdbc.update("INSERT INTO idr_idol (id, name) VALUES ('idol-1', '示例'), ('idol-2', '其他')");
         jdbc.update("INSERT INTO idr_source (id, idol_id, rss_url, display_name) "
                 + "VALUES ('source-1', 'idol-1', 'https://example.com/feed.xml', '示例源')");
@@ -636,18 +641,18 @@ class PostgresMigrationSeedIT {
                 + "VALUES ('post-1', 'idol-1', 'source-1', '动态一', 'https://example.com/1', now(), now()),"
                 + "       ('post-2', 'idol-2', 'source-1', '动态二', 'https://example.com/2', now(), now())");
 
-        // 旧字段刻意写成与守护关系不一致：只有读路径确实切到关联表，候选名单才会正确。
-        UUID single = insertUser("openid-single", null, "tpl-1", 3);
-        UUID multi = insertUser("openid-multi", "idol-2", "tpl-1", 3);
-        UUID noQuota = insertUser("openid-no-quota", "idol-1", "tpl-1", 0);
-        UUID otherTemplate = insertUser("openid-other-template", "idol-1", "tpl-2", 3);
-        UUID legacyOnly = insertUser("openid-legacy-only", "idol-1", "tpl-1", 3);
+        // 候选名单只由 idr_user_guard 决定：额度、模板、守护关系三者都要对上才进名单。
+        UUID single = insertUser("openid-single", "tpl-1", 3);
+        UUID multi = insertUser("openid-multi", "tpl-1", 3);
+        UUID noQuota = insertUser("openid-no-quota", "tpl-1", 0);
+        UUID otherTemplate = insertUser("openid-other-template", "tpl-2", 3);
+        UUID noGuard = insertUser("openid-no-guard", "tpl-1", 3);
         guard(single, "idol-1");
         guard(multi, "idol-1");
         guard(multi, "idol-2");
         guard(noQuota, "idol-1");
         guard(otherTemplate, "idol-1");
-        // legacyOnly 只有旧字段、没有守护关系，切换后不应再收到推送。
+        // noGuard 额度和模板都满足，但没有任何守护关系，因此不应进入候选名单。
 
         WorkerStore store = new WorkerStore(
                 jdbc, new TransactionTemplate(new DataSourceTransactionManager(testDataSource)));
@@ -658,7 +663,7 @@ class PostgresMigrationSeedIT {
                 .stream().map(WorkerModels.UserTarget::id).toList();
         assertEquals(2, targets.size(), targets.toString());
         assertTrue(targets.contains(single) && targets.contains(multi), targets.toString());
-        assertFalse(targets.contains(legacyOnly), "只有旧字段、没有守护关系的用户不应再收到推送");
+        assertFalse(targets.contains(noGuard), "没有守护关系的用户不应收到推送");
         assertFalse(targets.contains(noQuota) || targets.contains(otherTemplate), targets.toString());
 
         // 守护多位 idol 的用户，在单条动态上只出现一次——关联表按 idol 过滤后每人至多一行，
@@ -677,9 +682,9 @@ class PostgresMigrationSeedIT {
                         .stream().map(WorkerModels.UserTarget::id).toList());
 
         // 额度扣减同样以守护关系为准：没有守护关系的用户无法被扣减，delivery 一并回滚。
-        assertFalse(store.claimDelivery("post-1", legacyOnly, "idol-1", "tpl-1"));
+        assertFalse(store.claimDelivery("post-1", noGuard, "idol-1", "tpl-1"));
         assertEquals(0L, jdbc.queryForObject(
-                "SELECT count(*) FROM idr_notification_delivery WHERE user_id = ?", Long.class, legacyOnly));
+                "SELECT count(*) FROM idr_notification_delivery WHERE user_id = ?", Long.class, noGuard));
         assertTrue(store.claimDelivery("post-1", single, "idol-1", "tpl-1"));
         assertEquals(2, jdbc.queryForObject(
                 "SELECT subscribe_quota FROM idr_user WHERE id = ?", Integer.class, single));
@@ -700,7 +705,7 @@ class PostgresMigrationSeedIT {
         jdbc.update("INSERT INTO idr_post (id, idol_id, source_id, title, link, published_at, fetched_at) "
                 + "VALUES ('post-1', 'idol-1', 'source-1', '动态一', 'https://example.com/1', now(), now())");
         // quota_reserved = TRUE 表示这次投递已经预扣过一次额度，因此账面余额是扣减后的 2。
-        UUID userId = insertUser("openid-1", "idol-1", "tpl-1", 2);
+        UUID userId = insertUser("openid-1", "tpl-1", 2);
         guard(userId, "idol-1");
         jdbc.update("INSERT INTO idr_notification_delivery "
                 + "(post_id, user_id, template_id, status, attempt_count, quota_reserved, next_attempt_at) "
@@ -710,7 +715,7 @@ class PostgresMigrationSeedIT {
                 jdbc, new TransactionTemplate(new DataSourceTransactionManager(testDataSource)));
         WorkerModels.RetryDelivery candidate = store.loadDueDeliveries(10).get(0);
 
-        // 用户改守 idol-2：旧字段仍写着 idol-1，但守护关系已经不覆盖这条动态的 idol。
+        // 用户改守 idol-2：守护关系已经不覆盖这条动态的 idol。
         jdbc.update("DELETE FROM idr_user_guard WHERE user_id = ?", userId);
         guard(userId, "idol-2");
 
@@ -760,18 +765,18 @@ class PostgresMigrationSeedIT {
 
     @Test
     @Order(14)
-    void clientReadPathsResolveCurrentIdolFromGuardTableNotLegacyColumn() {
+    void clientReadPathsResolveCurrentIdolFromGuardTable() {
         jdbc.update("INSERT INTO idr_idol (id, name) VALUES ('idol-1', '示例'), ('idol-2', '其他')");
         jdbc.update("INSERT INTO idr_source (id, idol_id, rss_url, display_name) "
                 + "VALUES ('source-1', 'idol-1', 'https://example.com/feed.xml', '示例源')");
         jdbc.update("INSERT INTO idr_post (id, idol_id, source_id, title, link, published_at, fetched_at) "
                 + "VALUES ('post-1', 'idol-1', 'source-1', '动态一', 'https://example.com/1', now(), now())");
 
-        // 旧字段写 idol-2、守护关系写 idol-1：只有读路径确实切到关联表，结果才会是 idol-1。
-        UUID userId = insertUser("openid-1", "idol-2", "tpl-1", 3);
+        // 守护关系写 idol-1：读路径只认 idr_user_guard，结果必须是 idol-1。
+        UUID userId = insertUser("openid-1", "tpl-1", 3);
         guard(userId, "idol-1");
-        // 旧字段有值但没有任何守护关系：切换后必须回到引导态。
-        insertUser("openid-legacy-only", "idol-1", "tpl-1", 3);
+        // 没有任何守护关系的用户停留在引导态。
+        insertUser("openid-no-guard", "tpl-1", 3);
 
         JdbcIdolRadarStore api = new JdbcIdolRadarStore(JdbcClient.create(testDataSource), new CursorCodec());
 
@@ -780,17 +785,15 @@ class PostgresMigrationSeedIT {
         assertEquals("idol-1", currentIdolIdOfHome(api.getHome("openid-1")));
         assertEquals(1, ((List<?>) api.getFeed("openid-1", null).get("posts")).size());
 
-        assertEquals(Boolean.FALSE, api.bootstrap("openid-legacy-only").get("hasIdol"));
-        assertNull(api.listIdols("openid-legacy-only").get("currentIdolId"));
-        assertTrue(((List<?>) api.getFeed("openid-legacy-only", null).get("posts")).isEmpty());
+        assertEquals(Boolean.FALSE, api.bootstrap("openid-no-guard").get("hasIdol"));
+        assertNull(api.listIdols("openid-no-guard").get("currentIdolId"));
+        assertTrue(((List<?>) api.getFeed("openid-no-guard", null).get("posts")).isEmpty());
 
-        // 更换守护对象 = 替换唯一的守护关系；旧字段在 #29 之前仍然同步写入。
+        // 更换守护对象 = 替换唯一的守护关系；idr_user 上不再有任何守护字段被写入。
         api.setIdol("openid-1", "idol-2");
         assertEquals(
                 List.of("idol-2"),
                 jdbc.queryForList("SELECT idol_id FROM idr_user_guard WHERE user_id = ?", String.class, userId));
-        assertEquals("idol-2", jdbc.queryForObject(
-                "SELECT idol_id FROM idr_user WHERE id = ?", String.class, userId));
         assertEquals("idol-2", api.listIdols("openid-1").get("currentIdolId"));
     }
 
@@ -798,7 +801,7 @@ class PostgresMigrationSeedIT {
     @Order(15)
     void multipleGuardRowsResolveToTheMostRecentInsteadOfFailing() {
         jdbc.update("INSERT INTO idr_idol (id, name) VALUES ('idol-1', '示例'), ('idol-2', '其他')");
-        UUID userId = insertUser("openid-1", null, "tpl-1", 3);
+        UUID userId = insertUser("openid-1", "tpl-1", 3);
         jdbc.update("INSERT INTO idr_user_guard (user_id, idol_id, guarding_since) "
                 + "VALUES (?, 'idol-1', now() - interval '2 days'), (?, 'idol-2', now())", userId, userId);
 
@@ -830,7 +833,7 @@ class PostgresMigrationSeedIT {
                 + "        'https://example.com/1', now() - interval '2 hours', now()),"
                 + "       ('post-2', 'idol-1', 'source-fanclub', '微博', '应援集资', "
                 + "        'https://example.com/2', now() - interval '1 hour', now())");
-        UUID userId = insertUser("openid-1", null, "tpl-1", 3);
+        UUID userId = insertUser("openid-1", "tpl-1", 3);
         guard(userId, "idol-1");
 
         JdbcIdolRadarStore api = new JdbcIdolRadarStore(JdbcClient.create(testDataSource), new CursorCodec());
@@ -896,8 +899,8 @@ class PostgresMigrationSeedIT {
                 + "        'https://example.com/1', now(), now()),"
                 + "       ('post-fans', 'idol-1', 'source-fanclub', '微博', '应援集资', "
                 + "        'https://example.com/2', now(), now())");
-        UUID muter = insertUser("openid-muter", null, "tpl-1", 3);
-        UUID keeper = insertUser("openid-keeper", null, "tpl-1", 3);
+        UUID muter = insertUser("openid-muter", "tpl-1", 3);
+        UUID keeper = insertUser("openid-keeper", "tpl-1", 3);
         guard(muter, "idol-1");
         guard(keeper, "idol-1");
 
@@ -951,7 +954,7 @@ class PostgresMigrationSeedIT {
         jdbc.update("INSERT INTO idr_source (id, idol_id, rss_url, display_name) VALUES "
                 + "('source-1', 'idol-1', 'https://example.com/1.xml', '示例 · 微博'),"
                 + "('source-2', 'idol-2', 'https://example.com/2.xml', '其他 · 微博')");
-        UUID userId = insertUser("openid-1", null, "tpl-1", 3);
+        UUID userId = insertUser("openid-1", "tpl-1", 3);
         guard(userId, "idol-1");
 
         JdbcIdolRadarStore api = new JdbcIdolRadarStore(JdbcClient.create(testDataSource), new CursorCodec());
@@ -1019,8 +1022,8 @@ class PostgresMigrationSeedIT {
         jdbc.update("INSERT INTO idr_post (id, idol_id, source_id, title, link, published_at, fetched_at) "
                 + "VALUES ('post-1', 'idol-1', 'source-1', '动态一', 'https://example.com/1', now(), now()),"
                 + "       ('post-2', 'idol-1', 'source-1', '动态二', 'https://example.com/2', now(), now())");
-        UUID opener = insertUser("openid-opener", null, "tpl-1", 3);
-        UUID bystander = insertUser("openid-bystander", null, "tpl-1", 3);
+        UUID opener = insertUser("openid-opener", "tpl-1", 3);
+        UUID bystander = insertUser("openid-bystander", "tpl-1", 3);
         guard(opener, "idol-1");
         guard(bystander, "idol-1");
         // 只有 opener 收到过 post-1 的推送；bystander 收到的是 post-2。
@@ -1070,8 +1073,8 @@ class PostgresMigrationSeedIT {
                 + "VALUES ('source-1', 'idol-1', 'https://example.com/feed.xml', '示例 · 微博')");
         jdbc.update("INSERT INTO idr_post (id, idol_id, source_id, title, link, published_at, fetched_at) "
                 + "VALUES ('post-1', 'idol-1', 'source-1', '动态一', 'https://example.com/1', now(), now())");
-        UUID opener = insertUser("openid-opener", null, "tpl-1", 3);
-        UUID silent = insertUser("openid-silent", null, "tpl-1", 3);
+        UUID opener = insertUser("openid-opener", "tpl-1", 3);
+        UUID silent = insertUser("openid-silent", "tpl-1", 3);
         jdbc.update("INSERT INTO idr_notification_delivery (post_id, user_id, template_id, status) "
                 + "VALUES ('post-1', ?, 'tpl-1', 'sent'), ('post-1', ?, 'tpl-1', 'sent')", opener, silent);
 
@@ -1101,10 +1104,10 @@ class PostgresMigrationSeedIT {
                 + "VALUES ('post-1', 'idol-1', 'source-1', '动态一', 'https://example.com/1', now(), now())");
 
         // 四个新用户走到漏斗的不同深度：只注册、选了 idol、选了并授权、选了并授权。
-        UUID onlySignedUp = insertUser("openid-1", null, null, 0);
-        UUID guardedOnly = insertUser("openid-2", null, null, 0);
-        UUID converted = insertUser("openid-3", null, "tpl-1", 3);
-        UUID alsoConverted = insertUser("openid-4", null, "tpl-1", 3);
+        UUID onlySignedUp = insertUser("openid-1", null, 0);
+        UUID guardedOnly = insertUser("openid-2", null, 0);
+        UUID converted = insertUser("openid-3", "tpl-1", 3);
+        UUID alsoConverted = insertUser("openid-4", "tpl-1", 3);
         jdbc.update("UPDATE idr_user SET first_guarded_at = now() WHERE id IN (?, ?, ?)",
                 guardedOnly, converted, alsoConverted);
         jdbc.update("UPDATE idr_user SET first_subscribed_at = now() WHERE id IN (?, ?)",
@@ -1155,11 +1158,11 @@ class PostgresMigrationSeedIT {
         assertEquals("INVALID_INPUT", tooWide.code());
     }
 
-    private UUID insertUser(String openid, String legacyIdolId, String templateId, int quota) {
+    private UUID insertUser(String openid, String templateId, int quota) {
         return jdbc.queryForObject(
-                "INSERT INTO idr_user (openid, idol_id, subscribe_template_id, subscribe_quota) "
-                        + "VALUES (?, ?, ?, ?) RETURNING id",
-                UUID.class, openid, legacyIdolId, templateId, quota);
+                "INSERT INTO idr_user (openid, subscribe_template_id, subscribe_quota) "
+                        + "VALUES (?, ?, ?) RETURNING id",
+                UUID.class, openid, templateId, quota);
     }
 
     private void guard(UUID userId, String idolId) {

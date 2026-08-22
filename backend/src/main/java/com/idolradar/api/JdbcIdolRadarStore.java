@@ -128,16 +128,14 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
         IdolRow idol = findIdol(idolId, true).orElseThrow(() -> new AppException(
                 HttpStatus.NOT_FOUND, "IDOL_NOT_FOUND", "守护对象不存在或已停用"));
 
-        // user.idolId() 现在来自守护关联表，因此这里比较的是「当前守护关系是否已是该 idol」，
-        // 语义从设置一个字段变成替换该用户唯一的守护关系；对外返回结构不变。
+        // user.idolId() 来自守护关联表，因此这里比较的是「当前守护关系是否已是该 idol」，
+        // 语义是替换该用户唯一的守护关系；对外返回结构不变。
         if (!Objects.equals(user.idolId(), idolId)) {
-            jdbc.sql("UPDATE idr_user SET idol_id = :idolId, guarding_since = NOW(), "
-                            + "first_guarded_at = COALESCE(first_guarded_at, NOW()), updated_at = NOW() "
-                            + "WHERE id = :userId")
-                    .param("idolId", idolId)
+            // idr_user 上只剩转化统计口径的 first_guarded_at：首次守护才写入，之后换人不重置。
+            jdbc.sql("UPDATE idr_user SET first_guarded_at = COALESCE(first_guarded_at, NOW()), "
+                            + "updated_at = NOW() WHERE id = :userId")
                     .param("userId", user.id())
                     .update();
-            // 守护关联表已是唯一读取来源；上面那次旧字段写入只为兼容尚未删列的部署，#29 收尾时移除。
             jdbc.sql("DELETE FROM idr_user_guard WHERE user_id = :userId AND idol_id <> :idolId")
                     .param("userId", user.id())
                     .param("idolId", idolId)
@@ -455,7 +453,7 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
     }
 
     private Optional<UserRow> findUser(String openId) {
-        // 当前守护对象改从 idr_user_guard 读取；idr_user 上的同名字段仍在写入但不再被读。
+        // 当前守护对象只存在于 idr_user_guard；idr_user 上的旧单值字段已由 V7 删除。
         // LATERAL + LIMIT 1 保证无论关联表有几条守护关系都只返回一行，
         // 否则用户一旦守护多位 idol，这里的 optional() 会直接抛错。
         // 「当前」定义为最近开始的那条守护关系，与小程序「换人即替换」的语义一致。
