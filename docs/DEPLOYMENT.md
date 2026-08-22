@@ -169,11 +169,22 @@ git push origin v0.1.0
 
 ```bash
 cd /opt/idolradar
+corepack enable pnpm
+pnpm install --frozen-lockfile
+pnpm run admin:build
 docker compose config --quiet
 docker compose up -d --build
 docker compose ps
 docker compose logs --tail=100 migrate seed app worker rsshub
 ```
+
+`pnpm run admin:build` 必须在 `docker compose up --build` 之前执行，需要 Node.js 24。
+管理端产物写在 `backend/src/main/resources/static/admin/` 且已被 gitignore，而
+`backend/Dockerfile` 直接拷贝 `src` 目录——漏构建时镜像照样构建成功、容器健康、后端接口
+全部正常，只有 `/admin/` 返回 404，很难第一时间联想到是漏了这一步。取舍与这条构建顺序
+约束见 `docs/adr/0003-admin-web-separate-source-same-origin-runtime.md`。
+
+走 GitHub Actions 发布时无需手动执行：发布流程已包含该步骤。
 
 启动顺序由 Compose 保证：
 
@@ -295,10 +306,16 @@ docker compose run --rm \
 
 ```bash
 cd /opt/idolradar
+git pull --ff-only
+pnpm install --frozen-lockfile
+pnpm run admin:build
 docker compose up -d --build
 docker compose ps
 docker compose logs --tail=100 migrate seed app worker rsshub
 ```
+
+每次重建镜像前都要重新执行 `pnpm run admin:build`：产物不在仓库里，上一次构建的结果
+也不会随 `git pull` 更新。跳过的后果同 5. 节——只有 `/admin/` 404，其余一切正常。
 
 Compose 会复用 PostgreSQL、Redis 命名卷。禁止执行 `docker compose down -v`，否则会删除
 业务数据。
@@ -329,13 +346,20 @@ Navicat 连接 PostgreSQL：先建 SSH 隧道到服务器，再连接 `127.0.0.1
 ```bash
 mvn -f backend/pom.xml test
 mvn -f backend/pom.xml -Pintegration-test -Didolradar.it.enabled=true verify
+pnpm run admin:build
 pnpm test
 pnpm run validate:release
 docker compose config --quiet
 ```
 
+`validate:release` 的必需文件清单包含管理端产物入口，因此必须先执行 `admin:build`，
+否则这一步会以「缺少文件：backend/src/main/resources/static/admin/index.html」失败。
+这道检查正是用来兜住漏构建的。
+
 - `/healthz`：JVM 存活。
 - `/readyz`：PostgreSQL、Redis 可用。
+- `/admin/` 返回 200 且能打开登录页。后端接口全部正常但这一项 404，说明发布前漏了
+  `pnpm run admin:build`。
 - 真机闭环：登录、选择 idol、授权订阅、Worker 获取新动态、入库、收到消息、点击返回。
 - 重跑 Worker：不得重复 post、不得重复推送。
 - 监控：API 5xx/401/429、JVM、Hikari、数据库/Redis、Worker 最近成功时间、RSS 连续失败、

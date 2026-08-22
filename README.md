@@ -39,14 +39,23 @@ docs/                    PRD、功能设计、测试与部署手册
 
 ## 本机测试
 
-要求：Docker。所有 Compose 命令都在项目根目录执行：
+要求：Docker、Node.js 24。所有 Compose 命令都在项目根目录执行：
 
 ```bash
 # 编辑 .env：密码与微信配置
+corepack enable pnpm
+pnpm install --frozen-lockfile
+pnpm run admin:build
 docker compose up -d --build
 docker compose ps
 curl http://127.0.0.1:8080/readyz
 ```
+
+`pnpm run admin:build` 不能省。管理端产物写在 `backend/src/main/resources/static/admin/`
+且已被 gitignore，而 `backend/Dockerfile` 直接拷贝 `src` 目录——漏构建时镜像照样构建成功、
+容器健康、后端接口全部正常，**只有 `/admin/` 返回 404**，很难第一时间联想到是漏了这一步。
+只改后端或小程序时可以跳过；改过 `packages/admin-web/` 后必须重新执行。取舍见
+[ADR-0003](docs/adr/0003-admin-web-separate-source-same-origin-runtime.md)。
 
 首次完整启动自动执行 Flyway migration 和幂等 seed，并启动 PostgreSQL、业务 Redis、RSSHub
 缓存、RSSHub、Java API、定时 Worker。小程序及 `tests/miniprogram-e2e/` 不进入镜像。
