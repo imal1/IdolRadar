@@ -50,27 +50,29 @@ POSTGRES_PASSWORD=数据库强密码
 REDIS_PASSWORD=Redis强密码
 WECHAT_APP_ID=真实小程序AppID
 WECHAT_APP_SECRET=真实AppSecret
-SUBSCRIBE_TEMPLATE_ID=已审核模板ID
-SUBSCRIBE_IDOL_FIELD=thing1
-SUBSCRIBE_TITLE_FIELD=thing2
-SUBSCRIBE_TIME_FIELD=time3
 NOTIFICATIONS_ENABLED=true
 WEIBO_COOKIES=已授权Cookie
 ```
 
 ### 3.1 微信订阅消息模板契约
 
-在微信公众平台的订阅消息模板详情中确认模板 ID 与三个字段的完整名称，并按实际序号填写：
+模板 ID 和字段序号**不写在 `.env` 里**，而是写死在 `compose.yaml` 的 app 与 worker 两个服务上。
+理由：模板 ID 本来就随小程序包公开下发，不属于密钥；而发布流水线会用
+`PRODUCTION_ENV_FILE` secret 整份重写服务器 `.env`，配置放 `.env` 就必须登录服务器或改 secret
+才能变更，放 git 里发一个 Release 就能生效。
 
-| 业务内容 | 微信字段类型 | `.env` 配置 | 服务端限制 |
+当前模板「用户关注通知」（编号 10345）：
+
+| 业务内容 | 微信字段 | `compose.yaml` 配置 | 服务端限制 |
 |---|---|---|---|
-| idol 名 | `thing<number>.DATA` | `SUBSCRIBE_IDOL_FIELD` | 20 个 Unicode 字符，超出截断 |
-| 动态标题 | `thing<number>.DATA` | `SUBSCRIBE_TITLE_FIELD` | 20 个 Unicode 字符，超出截断 |
-| 发布时间 | `time<number>.DATA` | `SUBSCRIBE_TIME_FIELD` | Asia/Shanghai 的 `HH:mm` |
+| idol 名 | `thing1.DATA`（关注用户） | `IDOLRADAR_WORKER_SUBSCRIBE_IDOL_FIELD` | 20 个 Unicode 字符，超出截断 |
+| 动态标题 | `thing8.DATA`（备注） | `IDOLRADAR_WORKER_SUBSCRIBE_TITLE_FIELD` | 20 个 Unicode 字符，超出截断 |
+| 发布时间 | `time3.DATA`（提醒时间） | `IDOLRADAR_WORKER_SUBSCRIBE_TIME_FIELD` | Asia/Shanghai 的 `HH:mm` |
 
-`number` 是平台为当前模板生成的序号，不要假定一定为 `1/2/3`。小程序
-`miniprogram/config/env.js` 的 `subscribeTemplateId` 必须填写同一个模板 ID；模板 ID 会随小程序
-代码下发，不属于 AppSecret，但禁止把 `WECHAT_APP_SECRET` 放进小程序配置。
+换模板时改这三行，再改 `IDOLRADAR_SUBSCRIBE_TEMPLATE_ID` 与
+`IDOLRADAR_WORKER_SUBSCRIBE_TEMPLATE_ID` 两处模板 ID，序号以平台模板详情为准，不要假定是
+`1/2/3`。小程序 `miniprogram/config/env.js` 的 `subscribeTemplateId` 必须是同一个模板 ID，
+`scripts/validate-release.js` 会比对；禁止把 `WECHAT_APP_SECRET` 放进小程序配置。
 
 配置后先校验，再重新创建 API/Worker 容器并重新编译小程序：
 
