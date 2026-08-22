@@ -509,14 +509,14 @@ if (fs.existsSync(composePath)) {
   const templateIds = [...compose.matchAll(/^\s+IDOLRADAR(?:_WORKER)?_SUBSCRIBE_TEMPLATE_ID:\s*(\S+)$/gm)]
     .map((match) => match[1]);
   if (templateIds.length !== 2) {
-    addError('compose.yaml: app 与 worker 都必须配置 SUBSCRIBE_TEMPLATE_ID');
+    addError('compose.yaml: 必须同时配置 IDOLRADAR_SUBSCRIBE_TEMPLATE_ID / IDOLRADAR_WORKER_SUBSCRIBE_TEMPLATE_ID');
   } else if (templateIds.some((value) => value.includes('$'))) {
-    addError('compose.yaml: SUBSCRIBE_TEMPLATE_ID 必须是字面量，不得从 .env 取值');
+    addError('compose.yaml: IDOLRADAR_SUBSCRIBE_TEMPLATE_ID / IDOLRADAR_WORKER_SUBSCRIBE_TEMPLATE_ID 必须是字面量，不得从 .env 取值');
   } else if (new Set(templateIds).size !== 1) {
-    addError('compose.yaml: app 与 worker 的 SUBSCRIBE_TEMPLATE_ID 不一致');
+    addError('compose.yaml: IDOLRADAR_SUBSCRIBE_TEMPLATE_ID / IDOLRADAR_WORKER_SUBSCRIBE_TEMPLATE_ID 两者取值不一致');
   } else if (!isPlaceholder(clientConfig?.subscribeTemplateId)
     && templateIds[0] !== clientConfig.subscribeTemplateId) {
-    addError('客户端 subscribeTemplateId 与 compose.yaml SUBSCRIBE_TEMPLATE_ID 不一致');
+    addError('miniprogram/config/env.js subscribeTemplateId 与 compose.yaml IDOLRADAR_SUBSCRIBE_TEMPLATE_ID / IDOLRADAR_WORKER_SUBSCRIBE_TEMPLATE_ID 不一致');
   }
   for (const [name, type] of [
     ['IDOLRADAR_WORKER_SUBSCRIBE_IDOL_FIELD', 'thing'],

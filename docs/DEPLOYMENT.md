@@ -69,7 +69,8 @@ WEIBO_COOKIES=已授权Cookie
 | 动态标题 | `thing8.DATA`（备注） | `IDOLRADAR_WORKER_SUBSCRIBE_TITLE_FIELD` | 20 个 Unicode 字符，超出截断 |
 | 发布时间 | `time3.DATA`（提醒时间） | `IDOLRADAR_WORKER_SUBSCRIBE_TIME_FIELD` | Asia/Shanghai 的 `HH:mm` |
 
-换模板时改这三行加两处 `SUBSCRIBE_TEMPLATE_ID`，序号以平台模板详情为准，不要假定是
+换模板时改这三行，再改 `IDOLRADAR_SUBSCRIBE_TEMPLATE_ID` 与
+`IDOLRADAR_WORKER_SUBSCRIBE_TEMPLATE_ID` 两处模板 ID，序号以平台模板详情为准，不要假定是
 `1/2/3`。小程序 `miniprogram/config/env.js` 的 `subscribeTemplateId` 必须是同一个模板 ID，
 `scripts/validate-release.js` 会比对；禁止把 `WECHAT_APP_SECRET` 放进小程序配置。
 

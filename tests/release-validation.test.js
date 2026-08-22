@@ -73,7 +73,7 @@ test('release validation rejects subscribe template id taken from .env', (t) => 
   ));
 
   assert.notEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
-  assert.match(result.stderr, /SUBSCRIBE_TEMPLATE_ID 必须是字面量/);
+  assert.match(result.stderr, /IDOLRADAR_SUBSCRIBE_TEMPLATE_ID \/ IDOLRADAR_WORKER_SUBSCRIBE_TEMPLATE_ID 必须是字面量/);
 });
 
 test('release validation rejects client and server template id drift', (t) => {
@@ -84,5 +84,5 @@ test('release validation rejects client and server template id drift', (t) => {
   ));
 
   assert.notEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
-  assert.match(result.stderr, /客户端 subscribeTemplateId 与 compose.yaml SUBSCRIBE_TEMPLATE_ID 不一致/);
+  assert.match(result.stderr, /subscribeTemplateId 与 compose.yaml IDOLRADAR_SUBSCRIBE_TEMPLATE_ID \/ IDOLRADAR_WORKER_SUBSCRIBE_TEMPLATE_ID 不一致/);
 });
