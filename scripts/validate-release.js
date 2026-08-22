@@ -401,25 +401,10 @@ if (databaseUrl) {
     addError('.env/process: POSTGRES_PORT 必须是 1..65535');
   }
 }
-for (const name of [
-  'WECHAT_APP_ID',
-  'WECHAT_APP_SECRET',
-  'SUBSCRIBE_TEMPLATE_ID',
-  'SUBSCRIBE_IDOL_FIELD',
-  'SUBSCRIBE_TITLE_FIELD',
-  'SUBSCRIBE_TIME_FIELD'
-]) {
+// 订阅消息模板 ID 与字段序号不是密钥（模板 ID 已随小程序包下发），改由 compose.yaml 承载，
+// 这样发布流水线只重写 .env 也能带上模板变更，无需登录服务器。校验见下方 compose 段。
+for (const name of ['WECHAT_APP_ID', 'WECHAT_APP_SECRET']) {
   if (isPlaceholder(dotenv[name])) placeholder(`.env/process: ${name} 仍是占位值或未配置`);
-}
-for (const [name, type] of [
-  ['SUBSCRIBE_IDOL_FIELD', 'thing'],
-  ['SUBSCRIBE_TITLE_FIELD', 'thing'],
-  ['SUBSCRIBE_TIME_FIELD', 'time']
-]) {
-  const value = dotenv[name];
-  if (!isPlaceholder(value) && !new RegExp(`^${type}\\d+$`).test(value)) {
-    addError(`.env/process: ${name} 必须匹配 ${type}<number>`);
-  }
 }
 const rsshubBaseUrl = environmentValue(dotenv, ['RSSHUB_BASE_URL']);
 const rssTrustedOrigins = environmentValue(dotenv, ['RSS_TRUSTED_ORIGINS'])
@@ -449,11 +434,6 @@ if (dotenv.MINIPROGRAM_STATE !== 'formal') {
 }
 if (!isPlaceholder(dotenv.WECHAT_APP_ID) && projectAppId && dotenv.WECHAT_APP_ID !== projectAppId) {
   addError('.env/process: WECHAT_APP_ID 与 miniprogram/project.config.json appid 不一致');
-}
-if (!isPlaceholder(dotenv.SUBSCRIBE_TEMPLATE_ID)
-  && !isPlaceholder(clientConfig?.subscribeTemplateId)
-  && dotenv.SUBSCRIBE_TEMPLATE_ID !== clientConfig.subscribeTemplateId) {
-  addError('客户端 subscribeTemplateId 与服务端 SUBSCRIBE_TEMPLATE_ID 不一致');
 }
 
 const appSource = fs.existsSync(path.join(root, 'miniprogram/app.js'))
@@ -524,15 +504,40 @@ if (fs.existsSync(composePath)) {
     || !/worker:[\s\S]*?SPRING_FLYWAY_ENABLED:\s*"false"/.test(compose)) {
     addError('compose.yaml: Flyway 只能由 migrate 服务执行');
   }
+  // 模板 ID 与字段序号必须写成字面量：留 ${VAR} 会被服务器上的旧 .env 覆盖，
+  // 而发布流水线整份重写 .env，那份旧值我们在 CI 里看不到。
+  const templateIds = [...compose.matchAll(/^\s+IDOLRADAR(?:_WORKER)?_SUBSCRIBE_TEMPLATE_ID:\s*(\S+)$/gm)]
+    .map((match) => match[1]);
+  if (templateIds.length !== 2) {
+    addError('compose.yaml: app 与 worker 都必须配置 SUBSCRIBE_TEMPLATE_ID');
+  } else if (templateIds.some((value) => value.includes('$'))) {
+    addError('compose.yaml: SUBSCRIBE_TEMPLATE_ID 必须是字面量，不得从 .env 取值');
+  } else if (new Set(templateIds).size !== 1) {
+    addError('compose.yaml: app 与 worker 的 SUBSCRIBE_TEMPLATE_ID 不一致');
+  } else if (!isPlaceholder(clientConfig?.subscribeTemplateId)
+    && templateIds[0] !== clientConfig.subscribeTemplateId) {
+    addError('客户端 subscribeTemplateId 与 compose.yaml SUBSCRIBE_TEMPLATE_ID 不一致');
+  }
+  for (const [name, type] of [
+    ['IDOLRADAR_WORKER_SUBSCRIBE_IDOL_FIELD', 'thing'],
+    ['IDOLRADAR_WORKER_SUBSCRIBE_TITLE_FIELD', 'thing'],
+    ['IDOLRADAR_WORKER_SUBSCRIBE_TIME_FIELD', 'time']
+  ]) {
+    const match = compose.match(new RegExp(`^\\s+${name}:\\s*(\\S+)$`, 'm'));
+    if (!match) addError(`compose.yaml: 缺少运行变量 ${name}`);
+    else if (!new RegExp(`^${type}\\d+$`).test(match[1])) {
+      addError(`compose.yaml: ${name} 必须是字面量 ${type}<number>`);
+    }
+  }
+  if (compose.match(/^\s+IDOLRADAR_WORKER_SUBSCRIBE_IDOL_FIELD:\s*(\S+)$/m)?.[1]
+    === compose.match(/^\s+IDOLRADAR_WORKER_SUBSCRIBE_TITLE_FIELD:\s*(\S+)$/m)?.[1]) {
+    addError('compose.yaml: idol 名与动态标题不能使用同一个模板字段');
+  }
   for (const name of [
     'SPRING_DATASOURCE_URL',
     'SPRING_DATA_REDIS_HOST',
     'IDOLRADAR_WECHAT_APP_ID',
     'IDOLRADAR_WECHAT_APP_SECRET',
-    'IDOLRADAR_SUBSCRIBE_TEMPLATE_ID',
-    'IDOLRADAR_WORKER_SUBSCRIBE_IDOL_FIELD',
-    'IDOLRADAR_WORKER_SUBSCRIBE_TITLE_FIELD',
-    'IDOLRADAR_WORKER_SUBSCRIBE_TIME_FIELD',
     'IDOLRADAR_WORKER_RSS_TIMEOUT',
     'IDOLRADAR_WORKER_RSS_MAX_RESPONSE_BYTES',
     'IDOLRADAR_WORKER_NOTIFICATION_MAX_ATTEMPTS'
