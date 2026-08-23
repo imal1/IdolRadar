@@ -134,8 +134,11 @@ jobs:
           push: true
           tags: ${{ steps.rsshub-meta.outputs.tags }}
           labels: ${{ steps.rsshub-meta.outputs.labels }}
+          # 不内置 Chromium：当前 seed 只有 /weibo/user 一条 route，走 m.weibo.cn JSON 接口，
+          # 不开浏览器。省下的 Chromium 层与图形库依赖直接缩短服务器跨境拉取镜像的耗时。
+          # 将来接入需要浏览器的 route（抖音、小红书）时改回 0。
           build-args: |
-            PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=0
+            PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
           cache-from: type=gha,scope=rsshub
           cache-to: type=gha,mode=max,scope=rsshub
 
