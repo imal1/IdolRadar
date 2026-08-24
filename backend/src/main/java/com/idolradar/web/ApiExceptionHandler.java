@@ -5,6 +5,7 @@ import com.idolradar.api.AppException;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -18,6 +19,7 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /** 将框架和领域异常转换为公开错误封装，避免泄露内部细节。 */
 @RestControllerAdvice
+@ConditionalOnProperty(name = "app.mode", havingValue = "api", matchIfMissing = true)
 public class ApiExceptionHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(ApiExceptionHandler.class);
 

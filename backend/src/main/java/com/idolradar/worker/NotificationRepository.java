@@ -20,6 +20,12 @@ public interface NotificationRepository {
             UUID afterId,
             int limit);
 
+    Optional<WorkerModels.UserTarget> loadEligibleUser(
+            String postId,
+            String idolId,
+            String templateId,
+            UUID userId);
+
     /** 在同一事务内创建首次 delivery，并扣减对应模板的一次额度。 */
     boolean claimDelivery(String postId, UUID userId, String idolId, String templateId);
 

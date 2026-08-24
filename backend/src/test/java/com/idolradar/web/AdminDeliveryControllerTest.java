@@ -1,9 +1,13 @@
 package com.idolradar.web;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -16,9 +20,14 @@ import com.idolradar.admin.AdminAuthInterceptor;
 import com.idolradar.admin.AdminAuthService;
 import com.idolradar.admin.AdminDeliveryStore;
 import com.idolradar.api.AppException;
+import com.idolradar.config.BackendProperties;
+import com.idolradar.config.RateLimitProperties;
+import com.idolradar.worker.NotificationService;
+import com.idolradar.worker.WorkerModels;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -29,18 +38,28 @@ class AdminDeliveryControllerTest {
     private static final String TOKEN = "a".repeat(43);
 
     private AdminDeliveryStore store;
+    private NotificationService notifications;
+    private DistributedRateLimiter rateLimiter;
     private MockMvc mvc;
 
     @BeforeEach
     void setUp() {
         store = mock(AdminDeliveryStore.class);
+        notifications = mock(NotificationService.class);
+        rateLimiter = mock(DistributedRateLimiter.class);
+        when(rateLimiter.allow(anyString(), anyString(), anyInt(), any())).thenReturn(true);
         AdminAuthService auth = mock(AdminAuthService.class);
         when(auth.authenticate("Bearer " + TOKEN)).thenReturn(new AdminAuthService.Identity(
                 ADMIN_ID, "ops-admin", "f".repeat(64), Instant.now().plusSeconds(3600)));
         when(auth.authenticate(null)).thenThrow(new AppException(
                 HttpStatus.UNAUTHORIZED, "ADMIN_UNAUTHORIZED", "管理员登录已失效，请重新登录"));
 
-        mvc = MockMvcBuilders.standaloneSetup(new AdminDeliveryController(store))
+        mvc = MockMvcBuilders.standaloneSetup(new AdminDeliveryController(
+                        store,
+                        notifications,
+                        new BackendProperties(java.time.Duration.ofDays(30), "template-1"),
+                        rateLimiter,
+                        new RateLimitProperties(120, 20, 12, 1200, java.time.Duration.ofMinutes(1))))
                 .setControllerAdvice(new ApiExceptionHandler())
                 .setMessageConverters(new JacksonJsonHttpMessageConverter(
                         JsonMapper.builder().findAndAddModules().build()))
@@ -82,5 +101,23 @@ class AdminDeliveryControllerTest {
                         .param("status", "nonsense"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("INVALID_FILTER"));
+    }
+
+    @Test
+    void targetedSendUsesOnlyRequestedUserAndPost() throws Exception {
+        UUID userId = UUID.fromString("257deaec-4b79-4fe6-8e5b-8e91473ac377");
+        when(notifications.sendPostToUser("post-1", userId))
+                .thenReturn(WorkerModels.DeliveryOutcome.SENT);
+
+        mvc.perform(post("/admin/v1/notification-targets/{userId}/send", userId)
+                        .header("Authorization", "Bearer " + TOKEN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"postId\":\"post-1\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("sent"));
+
+        verify(notifications).sendPostToUser("post-1", userId);
+        verify(rateLimiter).allow(
+                "admin-targeted-notification", ADMIN_ID.toString(), 12, java.time.Duration.ofMinutes(1));
     }
 }

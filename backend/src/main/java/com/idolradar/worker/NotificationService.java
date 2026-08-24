@@ -18,9 +18,9 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import com.idolradar.config.BackendProperties;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 /**
@@ -31,7 +31,7 @@ import org.springframework.stereotype.Service;
  * 不自动重试或退还额度，保持 at-most-once。
  */
 @Service
-@ConditionalOnProperty(name = "app.mode", havingValue = "worker")
+@ConditionalOnExpression("'${app.mode:api}' == 'api' or '${app.mode:api}' == 'worker'")
 public class NotificationService {
     private static final Logger log = LoggerFactory.getLogger(NotificationService.class);
     private static final Set<Integer> USER_TERMINAL_CODES = Set.of(40003, 43101);
@@ -76,6 +76,22 @@ public class NotificationService {
             for (WorkerModels.DeliveryOutcome outcome : runConcurrent(tasks)) totals = totals.add(outcome);
             if (users.size() < 100) return totals;
         }
+    }
+
+    /** 管理端定向发送：只解析指定用户，后续仍复用同一额度与 delivery 状态机。 */
+    public WorkerModels.DeliveryOutcome sendPostToUser(String postId, UUID userId) {
+        if (backendProperties.subscribeTemplateId().isBlank()) {
+            throw new IllegalStateException("订阅消息模板未配置");
+        }
+        // Worker 容器由 WorkerModeConfiguration 在启动时校验，API 容器不经过那道门禁。
+        // 放在调用点而非启动门禁：登录与动态流不依赖推送配置，不该因为字段名写错而整个 API 拒绝启动。
+        properties.validateForNotificationSend();
+        WorkerModels.PostWithIdol post = repository.loadPostWithIdol(postId)
+                .orElseThrow(() -> new IllegalArgumentException("动态不存在"));
+        return repository.loadEligibleUser(
+                        post.id(), post.idolId(), backendProperties.subscribeTemplateId(), userId)
+                .map(user -> sendToUser(post, user, false))
+                .orElse(WorkerModels.DeliveryOutcome.SKIPPED);
     }
 
     public WorkerModels.NotificationTotals retryDueDeliveries() {

@@ -3,6 +3,7 @@ package com.idolradar.web;
 import java.util.Map;
 
 import com.idolradar.api.ApiResponse;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /** 区分进程存活状态与承载 API 流量所需依赖的就绪状态。 */
 @RestController
+@ConditionalOnProperty(name = "app.mode", havingValue = "api", matchIfMissing = true)
 public class HealthController {
     private final JdbcClient jdbc;
     private final StringRedisTemplate redis;

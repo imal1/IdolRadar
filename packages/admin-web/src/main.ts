@@ -2,7 +2,7 @@ import './styles.css';
 
 import { ADMIN_TOKEN_KEY, adminRequest, bindApiHandlers, errorMessage, requestReload } from './api';
 import { state, type PageId } from './state';
-import type { AdminProfile, CoreMetrics, DeliveryBoard, Idol, IdolRequest, LoginResult, Source, SourceSummary } from './types';
+import type { AdminProfile, CoreMetrics, DeliveryBoard, Idol, IdolRequest, LoginResult, NotificationTarget, Source, SourceSummary } from './types';
 import { $, $$, icon, showToast } from './ui';
 
 import * as audit from './pages/audit';
@@ -98,6 +98,10 @@ async function loadDeliveries({ scoped = true } = {}): Promise<void> {
   state.deliveryQueue = data.queue;
 }
 
+async function loadNotificationTargets(): Promise<void> {
+  state.notificationTargets = (await adminRequest<{ targets: NotificationTarget[] }>('/admin/v1/notification-targets')).targets;
+}
+
 async function loadMetrics(): Promise<void> {
   state.metrics = await adminRequest<CoreMetrics>(`/admin/v1/metrics?rangeDays=${state.metricsRange}`);
 }
@@ -107,7 +111,7 @@ const loaders: Partial<Record<PageId, () => Promise<unknown>>> = {
   dashboard: () => Promise.all([loadMetrics(), loadSources(), loadRequests(), loadDeliveries({ scoped: false })]),
   idols: loadIdols,
   sources: () => Promise.all([loadSources(), loadIdols()]),
-  deliveries: () => Promise.all([loadDeliveries(), loadIdols()]),
+  deliveries: () => Promise.all([loadDeliveries(), loadIdols(), loadNotificationTargets()]),
   requests: loadRequests,
 };
 

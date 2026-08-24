@@ -89,6 +89,57 @@ public class AdminDeliveryStore {
     }
 
     /**
+     * 列出仍有额度的定向推送候选；仅返回内部用户 ID，不暴露 OpenID。
+     *
+     * <p>每个用户只带一条尚未投递且未被屏蔽的最新动态，后台无需自行拼接任意消息内容。
+     */
+    public Map<String, Object> listNotificationTargets(String templateId) {
+        List<Map<String, Object>> targets = jdbc.sql("""
+                        SELECT u.id AS user_id, u.subscribe_quota, u.subscribed_at,
+                               g.idol_id, i.name AS idol_name,
+                               candidate.id AS post_id, candidate.title AS post_title,
+                               candidate.published_at
+                        FROM idr_user u
+                        JOIN idr_user_guard g ON g.user_id = u.id
+                        JOIN idr_idol i ON i.id = g.idol_id
+                        LEFT JOIN LATERAL (
+                          SELECT p.id, p.title, p.published_at
+                          FROM idr_post p
+                          WHERE p.idol_id = g.idol_id
+                            AND NOT EXISTS (
+                              SELECT 1 FROM idr_notification_delivery d
+                              WHERE d.post_id = p.id AND d.user_id = u.id
+                            )
+                            AND NOT EXISTS (
+                              SELECT 1 FROM idr_user_source_mute m
+                              WHERE m.user_id = u.id AND m.source_id = p.source_id
+                            )
+                          ORDER BY p.published_at DESC, p.id DESC
+                          LIMIT 1
+                        ) candidate ON TRUE
+                        WHERE u.subscribe_template_id = :templateId
+                          AND u.subscribe_quota > 0
+                        ORDER BY u.subscribed_at DESC NULLS LAST, u.id DESC
+                        LIMIT 100
+                        """)
+                .param("templateId", templateId)
+                .query((resultSet, rowNumber) -> {
+                    Map<String, Object> target = new LinkedHashMap<>();
+                    target.put("userId", resultSet.getString("user_id"));
+                    target.put("idolId", resultSet.getString("idol_id"));
+                    target.put("idolName", resultSet.getString("idol_name"));
+                    target.put("subscribeQuota", resultSet.getInt("subscribe_quota"));
+                    target.put("subscribedAt", resultSet.getObject("subscribed_at", OffsetDateTime.class));
+                    target.put("postId", resultSet.getString("post_id"));
+                    target.put("postTitle", resultSet.getString("post_title"));
+                    target.put("publishedAt", resultSet.getObject("published_at", OffsetDateTime.class));
+                    return target;
+                })
+                .list();
+        return Map.of("targets", targets);
+    }
+
+    /**
      * 状态分布与两个转化率。
      *
      * <p>成功率的分母只取已出结论的投递（sent/failed/uncertain）：把还在重试的算进去

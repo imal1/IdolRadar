@@ -9,6 +9,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.Duration;
@@ -77,6 +78,46 @@ class NotificationServiceTest {
                         "time9", Map.of("value", "08:00")),
                 "formal",
                 "zh_CN"));
+    }
+
+    @Test
+    void targetedSendOnlyLoadsAndSendsToRequestedUser() {
+        when(repository.loadPostWithIdol(post.id())).thenReturn(Optional.of(post));
+        when(repository.loadEligibleUser(post.id(), post.idolId(), "template-1", user.id()))
+                .thenReturn(Optional.of(user));
+
+        WorkerModels.DeliveryOutcome outcome = service.sendPostToUser(post.id(), user.id());
+
+        assertThat(outcome).isEqualTo(WorkerModels.DeliveryOutcome.SENT);
+        verify(repository).loadEligibleUser(post.id(), post.idolId(), "template-1", user.id());
+        verify(repository, never()).loadEligibleUsers(any(), any(), any(), any(), any(Integer.class));
+        verify(wechat).sendSubscribeMessage(any(), any());
+    }
+
+    @Test
+    void targetedSendRejectsMalformedTemplateFieldBeforeCallingWechat() {
+        // API 容器不经过 WorkerModeConfiguration 的启动门禁，字段名写错只会在微信侧被拒，
+        // 返回的错误码指不回配置本身，因此必须在发送前拦下。
+        properties.setSubscribeTitleField("foo");
+
+        assertThatThrownBy(() -> service.sendPostToUser(post.id(), user.id()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("subscribe-title-field");
+
+        verify(wechat, never()).sendSubscribeMessage(any(), any());
+        verifyNoInteractions(repository);
+    }
+
+    @Test
+    void targetedSendSkipsIneligibleUserWithoutCallingWechat() {
+        when(repository.loadPostWithIdol(post.id())).thenReturn(Optional.of(post));
+        when(repository.loadEligibleUser(post.id(), post.idolId(), "template-1", user.id()))
+                .thenReturn(Optional.empty());
+
+        WorkerModels.DeliveryOutcome outcome = service.sendPostToUser(post.id(), user.id());
+
+        assertThat(outcome).isEqualTo(WorkerModels.DeliveryOutcome.SKIPPED);
+        verify(wechat, never()).sendSubscribeMessage(any(), any());
     }
 
     @Test

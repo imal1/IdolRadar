@@ -16,6 +16,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -33,6 +34,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 因此这里不重复任何鉴权或审计代码。
  */
 @RestController
+@ConditionalOnProperty(name = "app.mode", havingValue = "api", matchIfMissing = true)
 public class AdminCatalogController {
     private final AdminCatalogStore store;
     private final SourceVerifier verifier;

@@ -10,6 +10,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /** 管理员登录与访问控制 HTTP 入口；不复用小程序登录接口或身份。 */
 @RestController
+@ConditionalOnProperty(name = "app.mode", havingValue = "api", matchIfMissing = true)
 public class AdminController {
     private final AdminAuthService authService;
 

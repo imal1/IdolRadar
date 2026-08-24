@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -20,7 +20,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * 已被新 post 替换的 outbox。
  */
 @Repository
-@ConditionalOnProperty(name = "app.mode", havingValue = "worker")
+@ConditionalOnExpression("'${app.mode:api}' == 'api' or '${app.mode:api}' == 'worker'")
 public class WorkerStore implements FeedRepository, NotificationRepository {
     private static final int MAX_SUBSCRIBE_QUOTA = 100;
 
@@ -205,6 +205,34 @@ public class WorkerStore implements FeedRepository, NotificationRepository {
                 """,
                 WorkerStore::userTarget,
                 postId, idolId, templateId, afterId, postId, limit);
+    }
+
+    /** 定向发送仍执行与 fanout 相同的额度、守护关系、模板和来源屏蔽校验。 */
+    @Override
+    public Optional<WorkerModels.UserTarget> loadEligibleUser(
+            String postId,
+            String idolId,
+            String templateId,
+            UUID userId) {
+        return jdbc.query("""
+                SELECT u.id, u.openid
+                FROM idr_user_guard g
+                JOIN idr_user u ON u.id = g.user_id
+                LEFT JOIN idr_notification_delivery d
+                  ON d.post_id = ? AND d.user_id = u.id
+                WHERE u.id = ?
+                  AND g.idol_id = ?
+                  AND u.subscribe_template_id = ?
+                  AND u.subscribe_quota > 0
+                  AND d.user_id IS NULL
+                  AND NOT EXISTS (
+                    SELECT 1 FROM idr_user_source_mute m
+                    WHERE m.user_id = u.id
+                      AND m.source_id = (SELECT source_id FROM idr_post WHERE id = ?)
+                  )
+                """,
+                WorkerStore::userTarget,
+                postId, userId, idolId, templateId, postId).stream().findFirst();
     }
 
     /** 同一事务创建幂等 delivery，并扣减匹配用户、idol、模板的一次额度。 */

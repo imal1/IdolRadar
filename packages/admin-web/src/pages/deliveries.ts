@@ -1,6 +1,7 @@
+import { adminRequest, submitChange } from '../api';
 import { state } from '../state';
 import type { Delivery } from '../types';
-import { icon, number, openDrawer, pageHeading, safe, statusBadge, timeText } from '../ui';
+import { $, fieldValue, icon, number, openDrawer, openModal, pageHeading, safe, showToast, statusBadge, timeText } from '../ui';
 
 /** 投递没有单列主键，(post_id, user_id) 才是账本主键，详情按这个复合键回查。 */
 export function deliveryKey(item: Pick<Delivery, 'postId' | 'userId'>): string {
@@ -19,13 +20,46 @@ export function render(): string {
   const topFailure = Math.max(1, ...state.deliveryFailures.map((item) => item.total));
   const failureRows = state.deliveryFailures.map((item) => `<div class="bar-row"><span>${safe(item.errorCode)}</span><span class="bar-track"><span style="width:${Math.round((item.total / topFailure) * 100)}%;background:#c4526e"></span></span><strong>${number(item.total)}</strong></div>`).join('');
   return `
-    ${pageHeading('推送投递看板', '观察 outbox 积压、微信投递状态、失败原因与推送回访，不展示用户 OpenID。', `<button class="button button--neutral" data-action="refresh-deliveries" type="button">${icon('refresh')} 刷新</button>`)}
+    ${pageHeading('推送投递看板', '观察 outbox 积压、微信投递状态、失败原因与推送回访，不展示用户 OpenID。', `<button class="button button--primary" data-action="targeted-send" type="button">${icon('send')} 定向推送</button><button class="button button--neutral" data-action="refresh-deliveries" type="button">${icon('refresh')} 刷新</button>`)}
     <section class="source-overview"><article class="card mini-stat"><span>待发队列</span><strong${queue.backlog ? ' style="color:var(--red)"' : ''}>${number(queue.backlog ?? 0)}</strong></article><article class="card mini-stat"><span>最久等待</span><strong>${timeText(queue.oldestQueuedAt)}</strong></article><article class="card mini-stat"><span>投递成功率</span><strong style="color:var(--green)">${summary.successRate ?? 0}%</strong></article><article class="card mini-stat"><span>推送回访率</span><strong>${summary.openRate ?? 0}%</strong></article></section>
     <section class="dashboard-grid">
       <article class="card"><div class="card__header"><div><h3>状态分布</h3><p>${safe(ranges[state.deliveryRange] || '')}内创建的投递</p></div></div><div class="card__body"><div class="health-summary"><div class="summary-chip">成功<strong>${number(summary.sent ?? 0)}</strong></div><div class="summary-chip is-warning">重试中<strong>${number(summary.retryable ?? 0)}</strong></div><div class="summary-chip is-warning">失败<strong>${number(summary.failed ?? 0)}</strong></div><div class="summary-chip is-muted">发送中<strong>${number((summary.sending ?? 0) + (summary.reserved ?? 0))}</strong></div><div class="summary-chip is-warning">结果未知<strong>${number(summary.uncertain ?? 0)}</strong></div></div><div class="queue-foot"><span>反复重试未成功</span><strong>${number(summary.stuck ?? 0)}</strong></div></div></article>
       <article class="card"><div class="card__header"><div><h3>失败原因分布</h3><p>失败、重试与结果未知的错误码</p></div></div><div class="card__body"><div class="bar-list">${failureRows || '<div class="empty">窗口内没有失败投递</div>'}</div><div class="queue-foot"><span>队列积压（pending / processing / retryable）</span><strong>${number(queue.pending ?? 0)} / ${number(queue.processing ?? 0)} / ${number(queue.retryable ?? 0)}</strong></div></div></article>
     </section>
     <section class="card data-card"><div class="data-card__toolbar"><div class="toolbar"><div class="filter-tabs">${tabs}</div><label class="field">时间 <select id="delivery-range">${Object.entries(ranges).map(([value, label]) => `<option value="${value}" ${String(state.deliveryRange) === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label><label class="field">idol <select id="delivery-idol"><option value="all">全部 idol</option>${state.idols.map((item) => `<option value="${safe(item.id)}" ${state.deliveryIdol === item.id ? 'selected' : ''}>${safe(item.name)}</option>`).join('')}</select></label></div><span class="result-count">${state.deliveries.length >= 200 ? '仅显示最近 200 条' : `${state.deliveries.length} 条投递`}</span></div><div class="table-wrap"><table><thead><tr><th>动态</th><th>用户</th><th>idol</th><th>状态</th><th>尝试次数</th><th>创建时间</th><th>结束时间</th><th>回访时间</th><th>操作</th></tr></thead><tbody>${rows || '<tr><td colspan="9"><div class="empty">当前条件下没有投递记录</div></td></tr>'}</tbody></table></div></section>`;
+}
+
+/** 管理员只能选择服务端给出的候选，不能输入 OpenID 或绕过订阅额度。 */
+function targetedSend(): void {
+  if (state.notificationTargets.length === 0) {
+    showToast('暂无有额度的可推送账号，请先让手机端点击“再订一次”');
+    return;
+  }
+  const options = state.notificationTargets.map((target) => {
+    const label = `${target.idolName} · 用户 ${target.userId.slice(0, 8)} · 订阅 ${timeText(target.subscribedAt)} · 剩余 ${target.subscribeQuota} 次 · ${target.postTitle || '暂无可发送动态'}`;
+    return `<option value="${safe(target.userId)}">${safe(label)}</option>`;
+  }).join('');
+  openModal({
+    eyebrow: '真实微信消息',
+    title: '定向推送',
+    body: `<div class="impact-box">仅向选中账号发送 1 条真实订阅消息，并立即消耗 1 次额度。发送不可撤销；OpenID 不会展示给管理端。</div><div class="form-grid" id="targeted-send-form"><label class="form-field form-field--wide"><span>目标账号 *</span><select name="userId">${options}</select><p class="form-hint">按最近订阅时间排序；用户编号为内部 ID 前 8 位。</p></label></div>`,
+    confirm: '确认发送 1 条',
+    danger: true,
+    onConfirm: () => {
+      const userId = fieldValue($('#targeted-send-form'), 'userId');
+      const target = state.notificationTargets.find((item) => item.userId === userId);
+      if (!target?.postId) {
+        showToast('该账号暂无可发送的新动态');
+        return false;
+      }
+      return submitChange(
+        () => adminRequest(`/admin/v1/notification-targets/${encodeURIComponent(userId)}/send`, {
+          method: 'POST',
+          body: JSON.stringify({ postId: target.postId }),
+        }),
+        `已向用户 ${userId.slice(0, 8)} 发送 1 条消息`);
+    },
+  });
 }
 
 function deliveryDetail(key: string): void {
@@ -36,4 +70,5 @@ function deliveryDetail(key: string): void {
 
 export const actions: Record<string, (id: string) => void> = {
   'delivery-detail': deliveryDetail,
+  'targeted-send': targetedSend,
 };
