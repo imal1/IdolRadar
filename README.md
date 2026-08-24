@@ -139,3 +139,4 @@ pnpm run validate:release
 - [产品需求 PRD](docs/MVP-产品需求PRD.md)
 - [测试用例](docs/MVP-测试用例.md)
 - [部署手册](docs/DEPLOYMENT.md)
+- [发版操作手册](docs/RELEASE-RUNBOOK.md)

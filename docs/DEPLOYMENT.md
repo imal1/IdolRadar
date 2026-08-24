@@ -131,6 +131,9 @@ curl -sI "https://app.imali.top$(curl -s https://app.imali.top/admin/ \
 
 ## 4. GitHub Actions 发布部署
 
+打标签发版的完整前置检查、部署顺序、上线验收与回滚步骤见
+[发版操作手册](RELEASE-RUNBOOK.md)；本节只说明流水线本身的配置。
+
 服务器部署需要在 GitHub `production` Environment 中配置：
 
 | 类型 | 名称 | 内容 |
