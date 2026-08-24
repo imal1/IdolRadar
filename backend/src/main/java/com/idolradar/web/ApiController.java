@@ -12,6 +12,7 @@ import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /** 暴露稳定小程序 API 的 HTTP 适配器；所有持久化决策委托给数据层。 */
 @RestController
+@ConditionalOnProperty(name = "app.mode", havingValue = "api", matchIfMissing = true)
 public class ApiController {
     private final AuthService authService;
     private final IdolRadarStore store;

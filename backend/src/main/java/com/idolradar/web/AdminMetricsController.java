@@ -5,6 +5,7 @@ import java.util.Map;
 import com.idolradar.admin.AdminMetricsStore;
 import com.idolradar.api.ApiResponse;
 import jakarta.validation.constraints.Positive;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
  * <p>鉴权由 AdminAuthInterceptor 统一处理，因此这里没有任何鉴权代码。
  */
 @RestController
+@ConditionalOnProperty(name = "app.mode", havingValue = "api", matchIfMissing = true)
 public class AdminMetricsController {
     private final AdminMetricsStore store;
 

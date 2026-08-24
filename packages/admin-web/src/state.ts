@@ -7,6 +7,7 @@ import type {
   DeliverySummary,
   Idol,
   IdolRequest,
+  NotificationTarget,
   Source,
   SourceSummary,
 } from './types';
@@ -32,6 +33,7 @@ export interface AdminState {
   requests: IdolRequest[];
   pendingCount: number;
   deliveries: Delivery[];
+  notificationTargets: NotificationTarget[];
   deliverySummary: DeliverySummary;
   deliveryFailures: DeliveryFailure[];
   deliveryQueue: DeliveryQueue;
@@ -55,6 +57,7 @@ export const state: AdminState = {
   requests: [],
   pendingCount: 0,
   deliveries: [],
+  notificationTargets: [],
   deliverySummary: {},
   deliveryFailures: [],
   deliveryQueue: {},

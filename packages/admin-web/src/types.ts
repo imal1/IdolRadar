@@ -106,6 +106,17 @@ export interface DeliveryBoard {
   queue: DeliveryQueue;
 }
 
+export interface NotificationTarget {
+  userId: string;
+  idolId: string;
+  idolName: string;
+  subscribeQuota: number;
+  subscribedAt: string | null;
+  postId: string | null;
+  postTitle: string | null;
+  publishedAt: string | null;
+}
+
 export interface VerifyResult {
   ok: boolean;
   itemCount: number;

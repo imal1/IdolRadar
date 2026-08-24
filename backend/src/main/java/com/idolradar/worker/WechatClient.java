@@ -29,7 +29,7 @@ import org.apache.hc.core5.http.ContentType;
 import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.apache.hc.core5.net.URIBuilder;
 import org.apache.hc.core5.util.Timeout;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
@@ -42,7 +42,7 @@ import org.springframework.stereotype.Component;
  * token 失效时仅删除匹配缓存，刷新后最多重发一次。
  */
 @Component("workerWechatClient")
-@ConditionalOnProperty(name = "app.mode", havingValue = "worker")
+@ConditionalOnExpression("'${app.mode:api}' == 'api' or '${app.mode:api}' == 'worker'")
 public class WechatClient implements WechatGateway {
     private static final java.util.Set<Integer> INVALID_TOKEN_CODES = java.util.Set.of(40001, 40014, 42001);
     private static final int MAX_RESPONSE_BYTES = 64 * 1024;

@@ -36,24 +36,48 @@ public class WorkerProperties {
     private Duration scheduleInterval = Duration.ofMinutes(30);
     private Duration scheduleInitialDelay = Duration.ofSeconds(5);
 
+    /**
+     * 只校验「组装一条订阅消息 payload」这件事真正读取的配置。
+     *
+     * <p>单独成一个方法，是为了让 API 容器的定向发送在发送前也能跑同一套断言：那条路径不经过
+     * WorkerModeConfiguration 的启动门禁，而字段名格式写错（例如把 thing8 写成 foo）只会在微信侧
+     * 被拒，返回的错误码指不回配置本身。
+     *
+     * <p>范围刻意只到 payload：微信 AppID/AppSecret 与 API base URL 由 API 侧的 WechatProperties
+     * 提供，本类同名字段只用于启动时的跨容器一致性比对，发送路径根本不读；RSS 超时与并发同理无关。
+     * 把它们放进来会让一次定向发送因为完全无关的配置项莫名失败。
+     */
+    public void validateForNotificationSend() {
+        if (!notificationsEnabled) return;
+        requireTemplateField(subscribeIdolField, "thing", "idolradar.worker.subscribe-idol-field");
+        requireTemplateField(subscribeTitleField, "thing", "idolradar.worker.subscribe-title-field");
+        requireTemplateField(subscribeTimeField, "time", "idolradar.worker.subscribe-time-field");
+        if (subscribeIdolField.equals(subscribeTitleField)) {
+            throw new IllegalStateException("WeChat subscribe template fields must be distinct");
+        }
+        requireMiniprogramState();
+    }
+
+    private void requireMiniprogramState() {
+        if (!java.util.Set.of("developer", "trial", "formal").contains(miniprogramState)) {
+            throw new IllegalStateException("idolradar.worker.miniprogram-state is invalid");
+        }
+    }
+
     public void validateForRun() {
+        validateForNotificationSend();
         if (notificationsEnabled) {
+            // 这几项只在 Worker 启动门禁里校验：它们服务于「Worker 与 API 身份必须一致」，
+            // 而不是单条消息的组装。
             requireText(wechatAppId, "idolradar.worker.wechat-app-id");
             requireText(wechatAppSecret, "idolradar.worker.wechat-app-secret");
             requireText(subscribeTemplateId, "idolradar.worker.subscribe-template-id");
-            requireTemplateField(subscribeIdolField, "thing", "idolradar.worker.subscribe-idol-field");
-            requireTemplateField(subscribeTitleField, "thing", "idolradar.worker.subscribe-title-field");
-            requireTemplateField(subscribeTimeField, "time", "idolradar.worker.subscribe-time-field");
-            if (subscribeIdolField.equals(subscribeTitleField)) {
-                throw new IllegalStateException("WeChat subscribe template fields must be distinct");
-            }
             if (!"https".equalsIgnoreCase(wechatApiBaseUrl.getScheme())) {
                 throw new IllegalStateException("idolradar.worker.wechat-api-base-url must use HTTPS");
             }
         }
-        if (!java.util.Set.of("developer", "trial", "formal").contains(miniprogramState)) {
-            throw new IllegalStateException("idolradar.worker.miniprogram-state is invalid");
-        }
+        // 关闭推送时 validateForNotificationSend 会提前返回，因此这里仍要独立校验一次。
+        requireMiniprogramState();
         if (rssTimeout.compareTo(Duration.ofMillis(1)) < 0
                 || notificationLease.compareTo(Duration.ofSeconds(1)) < 0
                 || notificationRetryBase.compareTo(Duration.ofSeconds(1)) < 0
