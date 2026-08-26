@@ -58,7 +58,7 @@ class RateLimitInterceptorTest {
                 limiter, new RateLimitProperties(120, 20, 12, 1_200, Duration.ofMinutes(1)));
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/v1/home");
         request.setAttribute(AuthInterceptor.IDENTITY_ATTRIBUTE, new AuthService.Identity(
-                UUID.randomUUID(), "openid-1", Instant.now().plusSeconds(60)));
+                UUID.randomUUID(), "openid-1", Instant.now().plusSeconds(60), "wechat-miniprogram"));
 
         AppException error = assertThrows(
                 AppException.class,

@@ -88,7 +88,34 @@ docker compose up -d --force-recreate app worker
 宿主机 Nginx 保持监听 `80/443`，将 `app.imali.top` 反向代理到
 `http://127.0.0.1:8080`。证书与 Nginx 配置不由本项目 Compose 修改。
 
-### 3.2 管理端公网入口
+### 3.2 守护数量上限
+
+一个用户能同时守护多少位 idol 由服务端配置决定，客户端不能通过请求参数抬高上限。配置在
+`backend/src/main/resources/application.yml` 的 `idolradar.guard`，可用环境变量覆盖：
+
+| Spring 配置 | 根目录 `.env` 里要改的键 | 默认值 | 含义 |
+|---|---|---|---|
+| `idolradar.guard.default-limit` | `GUARD_DEFAULT_LIMIT` | `1` | 会话上的客户端类型未在下表出现时使用的上限 |
+| `idolradar.guard.limits.wechat-miniprogram` | `GUARD_LIMIT_WECHAT_MINIPROGRAM` | `1` | 微信小程序的上限 |
+
+`compose.yaml` 把这两个键转成容器里的 `IDOLRADAR_GUARD_DEFAULT_LIMIT` /
+`IDOLRADAR_GUARD_LIMIT_WECHAT_MINIPROGRAM`，运维只需要改 `.env`。
+
+客户端类型不从请求头等客户端可控输入判断（否则用户可以伪造出更高的上限），而是在签发会话时
+写进 `idr_user_session.client_type`：微信登录端点用一次性 code 向微信换 openid，这条路径本身即
+证明调用方是小程序。请求侧只读该列，见 `docs/adr/0002-client-specific-guard-limits.md`。
+
+因此环境变量能做的是**调整已有客户端的上限**，改完重建容器即可，不用改代码发版；**新接入一个
+客户端**除了加环境变量，还要在 `compose.yaml` 与 `application.yml` 的 `limits` 下加对应键、
+并让该客户端的登录端点写入自己的 `client_type`。
+
+上限为 `1` 时 `PUT /v1/me/idol` 的语义是**换人即替换**，第二次守护不会被判成超限；上限大于 `1`
+时是追加，已达上限后再守护新的 idol 返回 `409 GUARD_LIMIT_REACHED`，文案可直接展示给用户。
+把上限调回 `1` 后，用户下一次换人会把存量守护收敛成一位——停在 `409` 会让他永远换不了人，
+而目前还没有取消守护的接口可以自救。同理，把上限调到大于 `1` 之前必须先有取消守护的接口，
+否则用户守满以后只能一直收到 `409`。上限必须是正整数，配成 `0` 或负数会让应用启动失败。
+
+### 3.3 管理端公网入口
 
 管理端与 `/admin/v1/**` 同源，随 backend 镜像发布，不是独立站点，也不需要 CORS
 （取舍见 `docs/adr/0003-admin-web-separate-source-same-origin-runtime.md`）。

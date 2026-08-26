@@ -11,7 +11,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -119,26 +118,56 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
         return result;
     }
 
-    /** 在同一事务中原子更换守护 idol，并返回该事务读到的视图。 */
+    /** 在同一事务中原子建立守护关系并校验上限，返回该事务读到的视图。 */
     @Override
     @Transactional
-    public Map<String, Object> setIdol(String openId, String idolId) {
+    public Map<String, Object> setIdol(String openId, String idolId, int guardLimit) {
         validateId(idolId, "idolId");
         UserRow user = requireUser(openId);
         IdolRow idol = findIdol(idolId, true).orElseThrow(() -> new AppException(
                 HttpStatus.NOT_FOUND, "IDOL_NOT_FOUND", "守护对象不存在或已停用"));
 
-        // user.idolId() 来自守护关联表，因此这里比较的是「当前守护关系是否已是该 idol」，
-        // 语义是替换该用户唯一的守护关系；对外返回结构不变。
-        if (!Objects.equals(user.idolId(), idolId)) {
+        // 先锁住用户行：并发的守护请求必须串行地走「数已守护数 -> 判上限 -> 插入」，
+        // 否则两个请求各自读到未超限的计数，插入后总数会越过上限。
+        jdbc.sql("SELECT id FROM idr_user WHERE id = :userId FOR UPDATE")
+                .param("userId", user.id())
+                .query(UUID.class)
+                .single();
+        // user.idolId() 只是按 guarding_since 取到的其中一条守护关系，多守护场景下不能用来
+        // 判断「是否已守护该 idol」，这里显式查这一对关系是否存在。
+        boolean alreadyGuarding = jdbc.sql(
+                        "SELECT EXISTS (SELECT 1 FROM idr_user_guard "
+                                + "WHERE user_id = :userId AND idol_id = :idolId)")
+                .param("userId", user.id())
+                .param("idolId", idolId)
+                .query(Boolean.class)
+                .single();
+
+        if (!alreadyGuarding) {
+            int guarded = jdbc.sql("SELECT COUNT(*)::integer FROM idr_user_guard WHERE user_id = :userId")
+                    .param("userId", user.id())
+                    .query(Integer.class)
+                    .single();
+            if (guarded >= guardLimit) {
+                if (guardLimit == 1) {
+                    // 单守护客户端（微信小程序）语义是换人即替换，不是把第二次守护判成超限。
+                    // 上限被从大调回 1 时也走这里：本次换人会把存量守护收敛成配置要求的一条。
+                    // 收敛虽然会删关系，但停在 409 会让用户永远换不了人，而且没有取消守护的接口可以自救。
+                    jdbc.sql("DELETE FROM idr_user_guard WHERE user_id = :userId AND idol_id <> :idolId")
+                            .param("userId", user.id())
+                            .param("idolId", idolId)
+                            .update();
+                } else {
+                    // 文案只说上限，不指导「先取消一位」：目前没有取消守护的接口，
+                    // 多守护客户端接入时要连同取消接口一起做。
+                    throw new AppException(HttpStatus.CONFLICT, "GUARD_LIMIT_REACHED",
+                            "最多只能同时守护 " + guardLimit + " 位");
+                }
+            }
             // idr_user 上只剩转化统计口径的 first_guarded_at：首次守护才写入，之后换人不重置。
             jdbc.sql("UPDATE idr_user SET first_guarded_at = COALESCE(first_guarded_at, NOW()), "
                             + "updated_at = NOW() WHERE id = :userId")
                     .param("userId", user.id())
-                    .update();
-            jdbc.sql("DELETE FROM idr_user_guard WHERE user_id = :userId AND idol_id <> :idolId")
-                    .param("userId", user.id())
-                    .param("idolId", idolId)
                     .update();
             jdbc.sql("INSERT INTO idr_user_guard (user_id, idol_id, guarding_since) "
                             + "VALUES (:userId, :idolId, NOW()) "

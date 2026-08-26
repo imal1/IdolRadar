@@ -39,18 +39,19 @@ public class JdbcAuthRepository implements AuthRepository {
     }
 
     @Override
-    public void createSession(UUID userId, String tokenHash, Instant expiresAt) {
+    public void createSession(UUID userId, String tokenHash, Instant expiresAt, String clientType) {
         transactions.executeWithoutResult(status -> {
             // 按用户串行创建会话，避免并发登录同时绕过数量上限。
             jdbc.sql("SELECT id FROM idr_user WHERE id = :userId FOR UPDATE")
                     .param("userId", userId)
                     .query(UUID.class)
                     .single();
-            jdbc.sql("INSERT INTO idr_user_session (token_hash, user_id, expires_at) "
-                            + "VALUES (:tokenHash, :userId, :expiresAt)")
+            jdbc.sql("INSERT INTO idr_user_session (token_hash, user_id, expires_at, client_type) "
+                            + "VALUES (:tokenHash, :userId, :expiresAt, :clientType)")
                     .param("tokenHash", tokenHash)
                     .param("userId", userId)
                     .param("expiresAt", OffsetDateTime.ofInstant(expiresAt, ZoneOffset.UTC))
+                    .param("clientType", clientType)
                     .update();
             // 在持锁事务内裁剪会话，确定性保留最新的有效会话。
             jdbc.sql("DELETE FROM idr_user_session WHERE user_id = :userId AND (expires_at <= NOW() OR "
@@ -66,7 +67,7 @@ public class JdbcAuthRepository implements AuthRepository {
     @Override
     public Optional<StoredIdentity> findSession(String tokenHash) {
         Optional<SessionRow> session = jdbc.sql(
-                        "SELECT s.user_id, s.expires_at, s.last_used_at, u.openid "
+                        "SELECT s.user_id, s.expires_at, s.last_used_at, s.client_type, u.openid "
                                 + "FROM idr_user_session s JOIN idr_user u ON u.id = s.user_id "
                                 + "WHERE s.token_hash = :tokenHash AND s.expires_at > NOW()")
                 .param("tokenHash", tokenHash)
@@ -83,7 +84,7 @@ public class JdbcAuthRepository implements AuthRepository {
                     .param("tokenHash", tokenHash)
                     .update();
         }
-        return Optional.of(new StoredIdentity(row.userId(), row.openId(), row.expiresAt()));
+        return Optional.of(new StoredIdentity(row.userId(), row.openId(), row.expiresAt(), row.clientType()));
     }
 
     private SessionRow mapSession(ResultSet resultSet, int rowNumber) throws SQLException {
@@ -91,9 +92,11 @@ public class JdbcAuthRepository implements AuthRepository {
                 resultSet.getObject("user_id", UUID.class),
                 resultSet.getString("openid"),
                 resultSet.getObject("expires_at", OffsetDateTime.class).toInstant(),
-                resultSet.getObject("last_used_at", OffsetDateTime.class).toInstant());
+                resultSet.getObject("last_used_at", OffsetDateTime.class).toInstant(),
+                resultSet.getString("client_type"));
     }
 
-    private record SessionRow(UUID userId, String openId, Instant expiresAt, Instant lastUsedAt) {
+    private record SessionRow(
+            UUID userId, String openId, Instant expiresAt, Instant lastUsedAt, String clientType) {
     }
 }

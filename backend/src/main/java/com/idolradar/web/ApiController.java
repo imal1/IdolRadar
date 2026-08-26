@@ -7,6 +7,7 @@ import com.idolradar.api.IdolRadarStore;
 import com.idolradar.auth.AuthInterceptor;
 import com.idolradar.auth.AuthService;
 import com.idolradar.config.BackendProperties;
+import com.idolradar.config.GuardProperties;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
@@ -30,11 +31,17 @@ public class ApiController {
     private final AuthService authService;
     private final IdolRadarStore store;
     private final BackendProperties properties;
+    private final GuardProperties guardProperties;
 
-    public ApiController(AuthService authService, IdolRadarStore store, BackendProperties properties) {
+    public ApiController(
+            AuthService authService,
+            IdolRadarStore store,
+            BackendProperties properties,
+            GuardProperties guardProperties) {
         this.authService = authService;
         this.store = store;
         this.properties = properties;
+        this.guardProperties = guardProperties;
     }
 
     @PostMapping("/v1/auth/wechat/login")
@@ -67,11 +74,16 @@ public class ApiController {
         return ApiResponse.ok(store.listIdols(identity.openId()));
     }
 
+    /**
+     * 守护上限由服务端按客户端类型解析；类型取自会话（签发时写入），
+     * 不取自任何客户端可控输入，否则用户可以伪造出更高的上限。
+     */
     @PutMapping("/v1/me/idol")
     public ApiResponse<Map<String, Object>> setIdol(
             @RequestAttribute(AuthInterceptor.IDENTITY_ATTRIBUTE) AuthService.Identity identity,
             @Valid @RequestBody SetIdolRequest request) {
-        return ApiResponse.ok(store.setIdol(identity.openId(), request.idolId()));
+        return ApiResponse.ok(store.setIdol(
+                identity.openId(), request.idolId(), guardProperties.limitFor(identity.clientType())));
     }
 
     @PostMapping("/v1/me/subscriptions")

@@ -12,7 +12,13 @@ public interface IdolRadarStore {
 
     Map<String, Object> listIdols(String openId);
 
-    Map<String, Object> setIdol(String openId, String idolId);
+    /**
+     * 守护一位 idol。
+     *
+     * <p>{@code guardLimit} 由服务端按客户端解析后传入：上限为 1 时语义是「换人即替换」，
+     * 上限大于 1 时是追加，达到上限后再守护新的 idol 会被拒绝。
+     */
+    Map<String, Object> setIdol(String openId, String idolId, int guardLimit);
 
     Map<String, Object> recordSubscription(String openId, boolean accepted, String templateId);
 
