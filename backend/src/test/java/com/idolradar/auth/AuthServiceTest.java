@@ -36,6 +36,8 @@ class AuthServiceTest {
         assertEquals(AuthService.hashToken(result.token()), repository.tokenHash);
         assertNotEquals(result.token(), repository.tokenHash);
         assertTrue(result.expiresAt().isAfter(Instant.now().plus(Duration.ofDays(29))));
+        // 客户端类型由登录端点写死：走微信 code 换 openid 这条路径的一定是小程序。
+        assertEquals(AuthService.CLIENT_TYPE_WECHAT_MINIPROGRAM, repository.clientType);
     }
 
     @Test
@@ -51,6 +53,8 @@ class AuthServiceTest {
         AuthService.Identity identity = service.authenticate("Bearer " + token);
 
         assertEquals("openid", identity.openId());
+        // 守护上限按这个类型解析，它必须来自会话记录而不是请求里的任何字段。
+        assertEquals("wechat-miniprogram", identity.clientType());
         AppException malformed = assertThrows(
                 AppException.class, () -> service.authenticate("Bearer invalid"));
         AppException missing = assertThrows(AppException.class, () -> service.authenticate(null));
@@ -77,6 +81,7 @@ class AuthServiceTest {
         private UUID userId;
         private String tokenHash;
         private String expectedHash;
+        private String clientType;
 
         @Override
         public UUID ensureUser(String openId) {
@@ -85,9 +90,10 @@ class AuthServiceTest {
         }
 
         @Override
-        public void createSession(UUID userId, String tokenHash, Instant expiresAt) {
+        public void createSession(UUID userId, String tokenHash, Instant expiresAt, String clientType) {
             this.userId = userId;
             this.tokenHash = tokenHash;
+            this.clientType = clientType;
         }
 
         @Override
@@ -96,7 +102,7 @@ class AuthServiceTest {
                 return Optional.empty();
             }
             return Optional.of(new StoredIdentity(
-                    USER_ID, "openid", Instant.now().plus(Duration.ofHours(1))));
+                    USER_ID, "openid", Instant.now().plus(Duration.ofHours(1)), "wechat-miniprogram"));
         }
     }
 }

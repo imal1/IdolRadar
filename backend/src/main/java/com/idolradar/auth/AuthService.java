@@ -21,6 +21,11 @@ import org.springframework.stereotype.Service;
 @Service
 public class AuthService {
     private static final Pattern BEARER_TOKEN = Pattern.compile("^Bearer ([A-Za-z0-9_-]{32,256})$");
+    /**
+     * 微信登录端点签发的会话固定记为小程序：用一次性 code 向微信换 openid 这条路径本身
+     * 即证明调用方是小程序。新客户端接入时由它自己的登录端点写自己的类型。
+     */
+    static final String CLIENT_TYPE_WECHAT_MINIPROGRAM = "wechat-miniprogram";
 
     private final AuthRepository repository;
     private final WechatGateway wechat;
@@ -58,7 +63,7 @@ public class AuthService {
         secureRandom.nextBytes(tokenBytes);
         String token = Base64.getUrlEncoder().withoutPadding().encodeToString(tokenBytes);
         Instant expiresAt = Instant.now().plus(properties.sessionTtl());
-        repository.createSession(userId, hashToken(token), expiresAt);
+        repository.createSession(userId, hashToken(token), expiresAt, CLIENT_TYPE_WECHAT_MINIPROGRAM);
         return new LoginResult(token, expiresAt);
     }
 
@@ -70,7 +75,7 @@ public class AuthService {
         }
         AuthRepository.StoredIdentity stored = repository.findSession(hashToken(matcher.group(1)))
                 .orElseThrow(AuthService::unauthorized);
-        return new Identity(stored.userId(), stored.openId(), stored.expiresAt());
+        return new Identity(stored.userId(), stored.openId(), stored.expiresAt(), stored.clientType());
     }
 
     /**
@@ -94,6 +99,7 @@ public class AuthService {
     public record LoginResult(String token, Instant expiresAt) {
     }
 
-    public record Identity(UUID userId, String openId, Instant expiresAt) {
+    /** {@code clientType} 来自签发会话时记录的登录方式，不来自任何客户端可控输入。 */
+    public record Identity(UUID userId, String openId, Instant expiresAt, String clientType) {
     }
 }

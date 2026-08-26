@@ -29,6 +29,9 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
@@ -565,7 +568,7 @@ class PostgresMigrationSeedIT {
         assertTrue(((List<?>) catalog.get("idols")).isEmpty());
         assertEquals("idol-1", catalog.get("currentIdolId"));
         AppException rejected = assertThrows(
-                AppException.class, () -> api.setIdol("openid-1", "idol-1"));
+                AppException.class, () -> api.setIdol("openid-1", "idol-1", 1));
         assertEquals("IDOL_NOT_FOUND", rejected.code());
     }
 
@@ -790,7 +793,7 @@ class PostgresMigrationSeedIT {
         assertTrue(((List<?>) api.getFeed("openid-no-guard", null).get("posts")).isEmpty());
 
         // 更换守护对象 = 替换唯一的守护关系；idr_user 上不再有任何守护字段被写入。
-        api.setIdol("openid-1", "idol-2");
+        api.setIdol("openid-1", "idol-2", 1);
         assertEquals(
                 List.of("idol-2"),
                 jdbc.queryForList("SELECT idol_id FROM idr_user_guard WHERE user_id = ?", String.class, userId));
@@ -937,10 +940,10 @@ class PostgresMigrationSeedIT {
 
         // 换守护对象后屏蔽设置保留：换回来时用户的选择还在，且记录本身极小。
         api.setSourceMuted("openid-muter", "source-fanclub", true);
-        api.setIdol("openid-muter", "idol-2");
+        api.setIdol("openid-muter", "idol-2", 1);
         assertEquals(1L, jdbc.queryForObject(
                 "SELECT count(*) FROM idr_user_source_mute WHERE user_id = ?", Long.class, muter));
-        api.setIdol("openid-muter", "idol-1");
+        api.setIdol("openid-muter", "idol-1", 1);
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> afterSwitch =
                 (List<Map<String, Object>>) api.listMySources("openid-muter").get("sources");
@@ -1156,6 +1159,134 @@ class PostgresMigrationSeedIT {
 
         AppException tooWide = assertThrows(AppException.class, () -> metrics.coreMetrics(365));
         assertEquals("INVALID_INPUT", tooWide.code());
+    }
+
+    @Test
+    @Order(23)
+    void guardLimitIsEnforcedServerSideWhileSingleGuardClientsStillReplace() {
+        jdbc.update("INSERT INTO idr_idol (id, name) VALUES ('idol-1', '甲'), ('idol-2', '乙'), ('idol-3', '丙')");
+        UUID single = insertUser("openid-single", "tpl-1", 3);
+        UUID multi = insertUser("openid-multi", "tpl-1", 3);
+
+        JdbcIdolRadarStore api = new JdbcIdolRadarStore(JdbcClient.create(testDataSource), new CursorCodec());
+
+        // 上限 1（微信小程序）：第二次守护是换人即替换，不能被判成超限。
+        api.setIdol("openid-single", "idol-1", 1);
+        api.setIdol("openid-single", "idol-2", 1);
+        assertEquals(List.of("idol-2"), guardedIdols(single));
+
+        // 上限 2：第二位是追加而不是替换。
+        api.setIdol("openid-multi", "idol-1", 2);
+        api.setIdol("openid-multi", "idol-2", 2);
+        assertEquals(List.of("idol-1", "idol-2"), guardedIdols(multi));
+
+        // 越过上限的第三位被拒，错误码与文案都可直接展示给用户。
+        AppException rejected = assertThrows(
+                AppException.class, () -> api.setIdol("openid-multi", "idol-3", 2));
+        assertEquals("GUARD_LIMIT_REACHED", rejected.code());
+        assertEquals(409, rejected.status().value());
+        assertTrue(rejected.getMessage().contains("2"), rejected.getMessage());
+        // 被拒的请求不留下任何副作用：既没删旧关系，也没插新关系。
+        assertEquals(List.of("idol-1", "idol-2"), guardedIdols(multi));
+
+        // 已经守护中的 idol 重复提交，即使已经达到上限也不该被拒。
+        api.setIdol("openid-multi", "idol-1", 2);
+        assertEquals(List.of("idol-1", "idol-2"), guardedIdols(multi));
+
+        // 上限从 2 调回 1 后再换人：收敛成配置要求的一条，而不是把用户永久卡在 409。
+        api.setIdol("openid-multi", "idol-3", 1);
+        assertEquals(List.of("idol-3"), guardedIdols(multi));
+
+        // 首次守护时间只写一次：换人和追加都不重置转化统计口径。
+        Instant firstGuardedAt = jdbc.queryForObject(
+                "SELECT first_guarded_at FROM idr_user WHERE id = ?", Instant.class, single);
+        api.setIdol("openid-single", "idol-3", 1);
+        assertEquals(firstGuardedAt, jdbc.queryForObject(
+                "SELECT first_guarded_at FROM idr_user WHERE id = ?", Instant.class, single));
+    }
+
+    @Test
+    @Order(24)
+    void concurrentGuardsCannotBothPassTheLimitCheck() throws Exception {
+        jdbc.update("INSERT INTO idr_idol (id, name) VALUES ('idol-1', '甲'), ('idol-2', '乙'), ('idol-3', '丙')");
+        UUID userId = insertUser("openid-lock", "tpl-1", 3);
+        JdbcIdolRadarStore api = new JdbcIdolRadarStore(JdbcClient.create(testDataSource), new CursorCodec());
+        TransactionTemplate tx = new TransactionTemplate(new DataSourceTransactionManager(testDataSource));
+        api.setIdol("openid-lock", "idol-1", 2);
+
+        // 两个请求同时守护第二、第三位：如果「数已守护数 -> 判上限 -> 插入」不串行，
+        // 两边都会读到未超限的计数，提交后总数越过上限。
+        CountDownLatch firstIsInside = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        Thread first = new Thread(() -> tx.executeWithoutResult(status -> {
+            api.setIdol("openid-lock", "idol-2", 2);
+            firstIsInside.countDown();
+            try {
+                release.await(10, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }));
+        first.start();
+        assertTrue(firstIsInside.await(10, TimeUnit.SECONDS));
+
+        AtomicReference<Throwable> secondFailure = new AtomicReference<>();
+        Thread second = new Thread(() -> {
+            try {
+                tx.executeWithoutResult(status -> api.setIdol("openid-lock", "idol-3", 2));
+            } catch (Throwable failure) {
+                secondFailure.set(failure);
+            }
+        });
+        second.start();
+        awaitBlockedOnRowLock();
+        release.countDown();
+        first.join(10_000);
+        second.join(10_000);
+
+        assertTrue(secondFailure.get() instanceof AppException, String.valueOf(secondFailure.get()));
+        assertEquals("GUARD_LIMIT_REACHED", ((AppException) secondFailure.get()).code());
+        assertEquals(List.of("idol-1", "idol-2"), guardedIdols(userId));
+    }
+
+    /** 等到有连接卡在行锁上再放行前一个事务，避免用固定睡眠制造偶发。 */
+    private void awaitBlockedOnRowLock() throws InterruptedException {
+        for (int attempt = 0; attempt < 200; attempt++) {
+            Integer blocked = jdbc.queryForObject(
+                    "SELECT count(*)::int FROM pg_stat_activity "
+                            + "WHERE wait_event_type = 'Lock' AND query LIKE '%idr_user WHERE id%'",
+                    Integer.class);
+            if (blocked != null && blocked > 0) {
+                return;
+            }
+            Thread.sleep(50);
+        }
+        throw new IllegalStateException("并发请求没有在行锁上等待");
+    }
+
+    @Test
+    @Order(25)
+    void sessionsRecordTheClientTypeThatIssuedThem() {
+        UUID userId = insertUser("openid-client-type", "tpl-1", 3);
+        // 存量会话（V8 之前插入的行不带该列）由默认值补齐为小程序，迁移不需要回填。
+        jdbc.update("INSERT INTO idr_user_session (token_hash, user_id, expires_at) VALUES (?, ?, now() + interval '1 day')",
+                "a".repeat(64), userId);
+        assertEquals("wechat-miniprogram", jdbc.queryForObject(
+                "SELECT client_type FROM idr_user_session WHERE token_hash = ?", String.class, "a".repeat(64)));
+
+        com.idolradar.auth.JdbcAuthRepository auth = new com.idolradar.auth.JdbcAuthRepository(
+                JdbcClient.create(testDataSource), new DataSourceTransactionManager(testDataSource));
+        auth.createSession(userId, "b".repeat(64), Instant.now().plus(Duration.ofDays(1)), "android");
+        assertEquals("android", jdbc.queryForObject(
+                "SELECT client_type FROM idr_user_session WHERE token_hash = ?", String.class, "b".repeat(64)));
+        // 请求侧读到的类型就是签发时写下的那个，守护上限据此解析。
+        assertEquals("android", auth.findSession("b".repeat(64)).orElseThrow().clientType());
+    }
+
+    private List<String> guardedIdols(UUID userId) {
+        return jdbc.queryForList(
+                "SELECT idol_id FROM idr_user_guard WHERE user_id = ? ORDER BY idol_id ASC",
+                String.class, userId);
     }
 
     private UUID insertUser(String openid, String templateId, int quota) {

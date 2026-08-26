@@ -3,6 +3,13 @@ app:
   mode: ${APP_MODE:api}
 
 idolradar:
+  guard:
+    # 一个用户能同时守护多少位 idol 由服务端决定。客户端类型取自会话上记录的
+    # client_type（登录时写入，不接受客户端传入），未在下表出现的类型走 default-limit。
+    default-limit: ${IDOLRADAR_GUARD_DEFAULT_LIMIT:1}
+    limits:
+      # 微信小程序固定为 1：上限为 1 时「换人即替换」，不会把第二次守护判为超限。
+      wechat-miniprogram: ${IDOLRADAR_GUARD_LIMIT_WECHAT_MINIPROGRAM:1}
   admin:
     # 管理员会话短于小程序会话；生产环境可通过 IDOLRADAR_ADMIN_SESSION_TTL 覆盖。
     session-ttl: ${IDOLRADAR_ADMIN_SESSION_TTL:12h}
