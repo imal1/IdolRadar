@@ -147,7 +147,7 @@ jobs:
     needs: publish
     if: vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 180
     environment:
       name: production
     permissions:
@@ -233,9 +233,16 @@ jobs:
             docker login ghcr.io --username "$GHCR_USER" --password-stdin
           docker pull "$BACKEND_IMAGE"
           docker pull "$RSSHUB_IMAGE"
-          docker save "$BACKEND_IMAGE" "$RSSHUB_IMAGE" |
-            gzip -1 |
-            ssh "${ssh_args[@]}" "gzip -dc | docker load"
+          for image in "$BACKEND_IMAGE" "$RSSHUB_IMAGE"; do
+            if ssh "${ssh_args[@]}" "docker image inspect '$image' >/dev/null 2>&1"; then
+              echo "Image already imported: $image"
+              continue
+            fi
+            # 逐个导入并使用最高 gzip 压缩；超时重跑时可跳过已完成镜像。
+            docker save "$image" |
+              gzip -9 |
+              ssh "${ssh_args[@]}" "gzip -dc | docker load"
+          done
           ssh "${ssh_args[@]}" "
             set -eu
             cd '$deploy_path'
