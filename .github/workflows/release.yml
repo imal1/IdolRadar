@@ -147,7 +147,7 @@ jobs:
     needs: publish
     if: vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     environment:
       name: production
     permissions:
