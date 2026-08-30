@@ -86,3 +86,13 @@ test('release validation rejects client and server template id drift', (t) => {
   assert.notEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
   assert.match(result.stderr, /subscribeTemplateId 与 compose.yaml IDOLRADAR_SUBSCRIBE_TEMPLATE_ID \/ IDOLRADAR_WORKER_SUBSCRIBE_TEMPLATE_ID 不一致/);
 });
+
+test('release validation rejects publicly bound runtime metrics', (t) => {
+  const result = withPatchedCompose(t, (compose) => compose.replace(
+    '127.0.0.1:${APP_METRICS_PORT:-9090}:9090',
+    '0.0.0.0:${APP_METRICS_PORT:-9090}:9090'
+  ));
+
+  assert.notEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stderr, /API 指标端口必须仅绑定 127\.0\.0\.1/);
+});

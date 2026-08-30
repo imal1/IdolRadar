@@ -58,6 +58,26 @@ server:
     include-message: never
     include-stacktrace: never
 
+management:
+  # 本机直跑只监听回环；Docker 内由 Compose 改为 0.0.0.0，再通过宿主机回环端口转发。
+  server:
+    address: ${MANAGEMENT_SERVER_ADDRESS:127.0.0.1}
+    port: ${MANAGEMENT_SERVER_PORT:9090}
+  endpoints:
+    access:
+      default: none
+    web:
+      discovery:
+        enabled: false
+      exposure:
+        include: prometheus
+  endpoint:
+    prometheus:
+      access: read-only
+  metrics:
+    tags:
+      mode: ${APP_MODE:api}
+
 logging:
   level:
     root: INFO

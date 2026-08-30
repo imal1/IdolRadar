@@ -13,7 +13,7 @@ Docker。
 - 安全组仅放行 `22`、`80`、`443`
 
 数据库密码、Redis 密码、AppSecret、Cookie 禁止提交 Git。PostgreSQL、Redis、
-Java 调试端口都只绑定 `127.0.0.1`。
+Java 调试端口和指标端口都只绑定 `127.0.0.1`。
 
 ## 2. GitHub Actions 生产环境
 
@@ -376,7 +376,27 @@ docker compose exec redis sh -c 'REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli ping'
 ```
 
 Navicat 连接 PostgreSQL：先建 SSH 隧道到服务器，再连接 `127.0.0.1:5432`；用户名、
-数据库名、密码取服务器 `.env`。不要在安全组放行 `5432/6379/8080/1200`。
+数据库名、密码取服务器 `.env`。不要在安全组放行 `5432/6379/8080/9090/9091/1200`。
+
+### 8.1 运行指标
+
+API 与 Worker 分别提供 Prometheus 文本端点：
+
+```bash
+curl http://127.0.0.1:${APP_METRICS_PORT:-9090}/actuator/prometheus
+curl http://127.0.0.1:${WORKER_METRICS_PORT:-9091}/actuator/prometheus
+```
+
+默认指标覆盖 JVM、Hikari 连接池和 HTTP 请求；项目指标使用
+`idolradar_worker_round_duration_seconds`、`idolradar_worker_fetch_sources_total`、
+`idolradar_notification_deliveries`、`idolradar_notification_outbox_pending`。所有指标带
+`mode=api|worker`，不含 OpenID、用户 ID 或凭据。数据库指标在后台刷新；不可用时保留最后一次
+成功快照（启动后从未成功时为 `NaN`），并令 `idolradar_database_metrics_available=0`。抓取线程
+不访问数据库，因此其余 JVM/HTTP/Worker 指标仍可立即返回。
+
+这两个端口没有应用层登录，安全边界是宿主机回环绑定：禁止加入 Nginx、禁止在安全组放行
+`9090/9091`。远程采集使用 SSH 隧道，或让监控程序运行在同一台服务器。需要改端口时仅设置
+`.env` 的 `APP_METRICS_PORT` / `WORKER_METRICS_PORT`，不得改成公网绑定。
 
 ## 9. 上线验收
 
@@ -395,6 +415,8 @@ docker compose config --quiet
 
 - `/healthz`：JVM 存活。
 - `/readyz`：PostgreSQL、Redis 可用。
+- `127.0.0.1:9090/actuator/prometheus` 与 `127.0.0.1:9091/actuator/prometheus`：
+  API、Worker 指标可抓取，公网域名访问同一路径必须为 404。
 - `/admin/` 返回 200 且能打开登录页。后端接口全部正常但这一项 404，说明发布前漏了
   `pnpm run admin:build`。
 - 真机闭环：登录、选择 idol、授权订阅、Worker 获取新动态、入库、收到消息、点击返回。

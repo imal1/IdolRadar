@@ -486,6 +486,13 @@ if (fs.existsSync(composePath)) {
   if (!compose.includes('127.0.0.1:${APP_PORT:-8080}:8080')) {
     addError('compose.yaml: Java API 调试端口必须仅绑定 127.0.0.1');
   }
+  // 指标包含内部容量与错误率，发布配置必须把 API/Worker 两个管理端口都锁在宿主机回环地址。
+  if (!compose.includes('127.0.0.1:${APP_METRICS_PORT:-9090}:9090')) {
+    addError('compose.yaml: API 指标端口必须仅绑定 127.0.0.1');
+  }
+  if (!compose.includes('127.0.0.1:${WORKER_METRICS_PORT:-9091}:9090')) {
+    addError('compose.yaml: Worker 指标端口必须仅绑定 127.0.0.1');
+  }
   if (!/context:\s*\.\/backend/.test(compose)) {
     addError('compose.yaml: Java 镜像构建上下文必须限制为 backend/');
   }
