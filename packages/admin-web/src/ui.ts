@@ -86,6 +86,14 @@ let toastTimer: ReturnType<typeof setTimeout>;
 
 export function showToast(message: string): void {
   const toast = $('#toast');
+  const dialog = document.querySelector<HTMLDialogElement>('dialog[open]');
+  if (dialog && !dialog.contains(toast)) {
+    // 原生 dialog 位于浏览器顶层；提示必须随当前弹窗进入顶层，关闭后再归还页面。
+    dialog.append(toast);
+    dialog.addEventListener('close', () => {
+      if (!dialog.open && dialog.contains(toast)) document.body.append(toast);
+    }, { once: true });
+  }
   toast.textContent = message;
   toast.classList.add('is-visible');
   clearTimeout(toastTimer);
