@@ -10,6 +10,11 @@ on:
         description: Optional Docker image tag; defaults to manual-<commit SHA>
         required: false
         type: string
+      reuse_current_rsshub:
+        description: Reuse the running RSSHub image when its source has not changed
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -31,6 +36,7 @@ jobs:
       backend_image: ${{ steps.images.outputs.backend }}
       rsshub_image: ${{ steps.images.outputs.rsshub }}
       image_tag: ${{ steps.images.outputs.tag }}
+      rsshub_tag: ${{ steps.images.outputs.rsshub_tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -83,6 +89,8 @@ jobs:
           echo "backend=${REGISTRY}/${owner}/idolradar-backend" >> "$GITHUB_OUTPUT"
           echo "rsshub=${REGISTRY}/${owner}/idolradar-rsshub" >> "$GITHUB_OUTPUT"
           echo "tag=$image_tag" >> "$GITHUB_OUTPUT"
+          rsshub_revision="$(git -C rsshub rev-parse --verify HEAD)"
+          echo "rsshub_tag=rsshub-${rsshub_revision:0:12}" >> "$GITHUB_OUTPUT"
 
       - name: Sign in to GHCR
         uses: docker/login-action@v3
@@ -120,7 +128,7 @@ jobs:
         with:
           images: ${{ steps.images.outputs.rsshub }}
           tags: |
-            type=raw,value=${{ steps.images.outputs.tag }}
+            type=raw,value=${{ steps.images.outputs.rsshub_tag }}
             type=raw,value=latest
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
@@ -161,7 +169,7 @@ jobs:
         env:
           PRODUCTION_ENV_FILE: ${{ secrets.PRODUCTION_ENV_FILE }}
           BACKEND_IMAGE: ${{ needs.publish.outputs.backend_image }}:${{ needs.publish.outputs.image_tag }}
-          RSSHUB_IMAGE: ${{ needs.publish.outputs.rsshub_image }}:${{ needs.publish.outputs.image_tag }}
+          RSSHUB_IMAGE: ${{ needs.publish.outputs.rsshub_image }}:${{ needs.publish.outputs.rsshub_tag }}
         run: |
           set -euo pipefail
           test -n "$PRODUCTION_ENV_FILE"
@@ -220,7 +228,8 @@ jobs:
           DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
           DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
           BACKEND_IMAGE: ${{ needs.publish.outputs.backend_image }}:${{ needs.publish.outputs.image_tag }}
-          RSSHUB_IMAGE: ${{ needs.publish.outputs.rsshub_image }}:${{ needs.publish.outputs.image_tag }}
+          RSSHUB_IMAGE: ${{ needs.publish.outputs.rsshub_image }}:${{ needs.publish.outputs.rsshub_tag }}
+          REUSE_CURRENT_RSSHUB: ${{ inputs.reuse_current_rsshub }}
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -233,6 +242,17 @@ jobs:
             docker login ghcr.io --username "$GHCR_USER" --password-stdin
           docker pull "$BACKEND_IMAGE"
           docker pull "$RSSHUB_IMAGE"
+          # 首次切换到源码版本标签时，可复用已运行且确认源码未变的 RSSHub 镜像。
+          if [[ "${REUSE_CURRENT_RSSHUB:-false}" == "true" ]] &&
+             ! ssh "${ssh_args[@]}" "docker image inspect '$RSSHUB_IMAGE' >/dev/null 2>&1"; then
+            ssh "${ssh_args[@]}" "
+              set -eu
+              current_container=\$(cd '$deploy_path' && docker compose ps -q rsshub)
+              test -n \"\$current_container\"
+              current_image_id=\$(docker inspect --format '{{.Image}}' \"\$current_container\")
+              docker tag \"\$current_image_id\" '$RSSHUB_IMAGE'
+            "
+          fi
           for image in "$BACKEND_IMAGE" "$RSSHUB_IMAGE"; do
             if ssh "${ssh_args[@]}" "docker image inspect '$image' >/dev/null 2>&1"; then
               echo "Image already imported: $image"
