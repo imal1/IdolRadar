@@ -212,13 +212,15 @@ jobs:
           tar -C "$RUNNER_TEMP/idolradar-release" -czf - . |
             ssh "${ssh_args[@]}" "install -d -m 700 '$deploy_path' && tar -xzf - -C '$deploy_path'"
 
-      - name: Pull private images and deploy
+      - name: Transfer private images and deploy
         shell: bash
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
           DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          BACKEND_IMAGE: ${{ needs.publish.outputs.backend_image }}:${{ needs.publish.outputs.image_tag }}
+          RSSHUB_IMAGE: ${{ needs.publish.outputs.rsshub_image }}:${{ needs.publish.outputs.image_tag }}
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -226,13 +228,17 @@ jobs:
           deploy_port="${DEPLOY_PORT:-22}"
           deploy_path="${DEPLOY_PATH:-/opt/idolradar}"
           ssh_args=(-i "$HOME/.ssh/idolradar_deploy" -p "$deploy_port" -o KexAlgorithms=curve25519-sha256 "$DEPLOY_USER@$DEPLOY_HOST")
+          # 生产机直连 GHCR 极慢；由 Runner 下载后经 SSH 流式导入，避免发布被跨境拉取阻塞。
           printf '%s' "$GHCR_TOKEN" |
-            ssh "${ssh_args[@]}" "docker login ghcr.io --username '$GHCR_USER' --password-stdin"
+            docker login ghcr.io --username "$GHCR_USER" --password-stdin
+          docker pull "$BACKEND_IMAGE"
+          docker pull "$RSSHUB_IMAGE"
+          docker save "$BACKEND_IMAGE" "$RSSHUB_IMAGE" |
+            gzip -1 |
+            ssh "${ssh_args[@]}" "gzip -dc | docker load"
           ssh "${ssh_args[@]}" "
             set -eu
-            trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
             cd '$deploy_path'
-            docker compose pull
             docker compose up -d --no-build --remove-orphans
             docker compose ps
           "
@@ -241,5 +247,6 @@ jobs:
         if: always()
         shell: bash
         run: |
+          docker logout ghcr.io >/dev/null 2>&1 || true
           rm -rf "$RUNNER_TEMP/idolradar-release"
           rm -f "$HOME/.ssh/idolradar_deploy"
