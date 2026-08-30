@@ -14,6 +14,8 @@ import static org.mockito.Mockito.when;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -68,6 +70,7 @@ class NotificationServiceTest {
         ArgumentCaptor<WorkerModels.SubscribeMessage> message =
                 ArgumentCaptor.forClass(WorkerModels.SubscribeMessage.class);
         verify(wechat).sendSubscribeMessage(message.capture(), any());
+        String sendTime = message.getValue().data().get("time9").get("value");
         assertThat(message.getValue()).isEqualTo(new WorkerModels.SubscribeMessage(
                 user.openId(),
                 "template-1",
@@ -75,9 +78,24 @@ class NotificationServiceTest {
                 Map.of(
                         "thing5", Map.of("value", "12345678901234567890"),
                         "thing7", Map.of("value", "😀".repeat(20)),
-                        "time9", Map.of("value", "08:00")),
+                        "time9", Map.of("value", sendTime)),
                 "formal",
                 "zh_CN"));
+    }
+
+    @Test
+    void usesSendTimeInsteadOfPostPublishedTimeInSubscribeMessage() {
+        properties.setSubscribeTimeField("time9");
+        Instant beforeBuild = Instant.now();
+        post = new WorkerModels.PostWithIdol(
+                "post-1", "idol-1", "爱豆", "一条新动态", beforeBuild.minus(Duration.ofHours(12)));
+
+        WorkerModels.SubscribeMessage message = service.buildMessage(post, user.openId());
+
+        Instant afterBuild = Instant.now();
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.of("Asia/Shanghai"));
+        assertThat(message.data().get("time9").get("value"))
+                .isIn(formatter.format(beforeBuild), formatter.format(afterBuild));
     }
 
     @Test

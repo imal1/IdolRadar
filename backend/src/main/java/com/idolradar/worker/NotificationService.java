@@ -2,6 +2,7 @@ package com.idolradar.worker;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -36,7 +37,7 @@ public class NotificationService {
     private static final Logger log = LoggerFactory.getLogger(NotificationService.class);
     private static final Set<Integer> USER_TERMINAL_CODES = Set.of(40003, 43101);
     private static final Set<Integer> GLOBAL_ABORT_CODES = Set.of(-1, 40037, 41030, 45009, 47003);
-    // 微信 time.DATA 只接受 24 小时制时间，不能发送 yyyy-MM-dd HH:mm。
+    // 微信 time.DATA 只接受 24 小时制时间；提醒时间取消息组装时刻，不能误用动态发布时间。
     private static final DateTimeFormatter MESSAGE_TIME = DateTimeFormatter
             .ofPattern("HH:mm")
             .withZone(ZoneId.of("Asia/Shanghai"));
@@ -247,7 +248,7 @@ public class NotificationService {
         Map<String, Map<String, String>> data = Map.of(
                 properties.getSubscribeIdolField(), Map.of("value", truncateThing(post.idolName(), "爱豆")),
                 properties.getSubscribeTitleField(), Map.of("value", truncateThing(post.title(), "有新动态")),
-                properties.getSubscribeTimeField(), Map.of("value", MESSAGE_TIME.format(post.publishedAt())));
+                properties.getSubscribeTimeField(), Map.of("value", MESSAGE_TIME.format(Instant.now())));
         return new WorkerModels.SubscribeMessage(
                 openId,
                 backendProperties.subscribeTemplateId(),
