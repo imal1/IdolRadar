@@ -87,6 +87,9 @@ Page({
     guardDays: 1,
     sourceCount: 0,
     subscribeQuota: 0,
+    nickname: '',
+    nicknameDraft: '',
+    savingNickname: false,
     sources: [],
     sourcesLoading: true,
     sourcesError: '',
@@ -143,6 +146,8 @@ Page({
       page.setData({
         loading: false,
         idol: idol,
+        nickname: String(user.nickname || ''),
+        nicknameDraft: String(user.nickname || ''),
         guardDays: guardDays(home, user),
         sourceCount: sourceCount,
         subscribeQuota: safeNumber(idolUtils.firstDefined(user.subscribeQuota, home.subscribeQuota, 0))
@@ -158,6 +163,38 @@ Page({
 
   retry: function () {
     this.loadData();
+  },
+
+  onNicknameInput: function (event) {
+    this.setData({ nicknameDraft: String(event.detail.value || '') });
+  },
+
+  saveNickname: function () {
+    if (this.data.savingNickname) {
+      return;
+    }
+    var nickname = String(this.data.nicknameDraft || '').trim();
+    if (!nickname) {
+      wx.showToast({ title: '昵称不能为空', icon: 'none' });
+      return;
+    }
+    if (nickname.length > 128) {
+      wx.showToast({ title: '昵称不能超过 128 个字符', icon: 'none' });
+      return;
+    }
+
+    var page = this;
+    this.setData({ savingNickname: true });
+    // 只有用户点击保存才写 profileAuthorizedAt；输入过程和静默登录都不触发保存。
+    return api.callUser('updateNickname', { nickname: nickname }).then(function (data) {
+      var saved = String(getUser(data).nickname || nickname);
+      page.setData({ nickname: saved, nicknameDraft: saved, savingNickname: false });
+      getApp().invalidateBootstrap();
+      wx.showToast({ title: '昵称已保存', icon: 'success' });
+    }).catch(function (error) {
+      page.setData({ savingNickname: false });
+      wx.showToast({ title: error.message || '保存失败，请重试', icon: 'none' });
+    });
   },
 
   loadSources: function () {

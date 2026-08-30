@@ -25,6 +25,7 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
     private static final int PAGE_SIZE = 20;
     private static final int MAX_ID_LENGTH = 128;
     private static final int MAX_SUBSCRIBE_QUOTA = 100;
+    private static final int MAX_NICKNAME_LENGTH = 128;
     private static final int MAX_REQUEST_NAME_LENGTH = 64;
     private static final int MAX_REQUEST_NOTE_LENGTH = 200;
     private static final ZoneId SHANGHAI = ZoneId.of("Asia/Shanghai");
@@ -115,6 +116,22 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("idols", idols);
         result.put("currentIdolId", user.idolId());
+        return result;
+    }
+
+    @Override
+    public Map<String, Object> updateNickname(String openId, String nickname) {
+        String normalized = normalizeNickname(nickname);
+        UserRow user = requireUser(openId);
+        // 只有用户主动提交本接口才记录授权时间；静默登录只负责建档与签发会话。
+        jdbc.sql("UPDATE idr_user SET nickname = :nickname, profile_authorized_at = NOW(), "
+                        + "updated_at = NOW() WHERE id = :userId")
+                .param("nickname", normalized)
+                .param("userId", user.id())
+                .update();
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("user", serializeUser(findUser(openId).orElseThrow()));
         return result;
     }
 
@@ -571,6 +588,8 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
 
     private static Map<String, Object> serializeUser(UserRow user) {
         Map<String, Object> result = new LinkedHashMap<>();
+        result.put("nickname", user.nickname());
+        result.put("profileAuthorizedAt", format(user.profileAuthorizedAt()));
         result.put("idolId", user.idolId());
         result.put("guardingSince", format(user.guardingSince()));
         result.put("subscribeQuota", Math.max(0, Math.min(MAX_SUBSCRIBE_QUOTA, user.subscribeQuota())));
@@ -611,6 +630,8 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
         return new UserRow(
                 resultSet.getObject("id", UUID.class),
                 resultSet.getString("openid"),
+                resultSet.getString("nickname"),
+                instant(resultSet, "profile_authorized_at"),
                 resultSet.getString("guard_idol_id"),
                 instant(resultSet, "guard_guarding_since"),
                 resultSet.getInt("subscribe_quota"),
@@ -670,9 +691,21 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
         return value.chars().anyMatch(character -> character < 32 || character == 127);
     }
 
+    private static String normalizeNickname(String value) {
+        String normalized = value == null ? "" : value.strip();
+        if (normalized.isEmpty()
+                || normalized.codePointCount(0, normalized.length()) > MAX_NICKNAME_LENGTH
+                || hasControlCharacter(normalized)) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "微信昵称无效");
+        }
+        return normalized;
+    }
+
     private record UserRow(
             UUID id,
             String openId,
+            String nickname,
+            Instant profileAuthorizedAt,
             String idolId,
             Instant guardingSince,
             int subscribeQuota,

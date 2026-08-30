@@ -106,6 +106,38 @@ class ApiControllerTest {
     }
 
     @Test
+    void profileNicknameUpdateRequiresAuthAndValidatesInput() throws Exception {
+        when(auth.authenticate("Bearer valid-token")).thenReturn(identity("wechat-miniprogram"));
+        when(auth.authenticate(null)).thenThrow(new AppException(
+                HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "登录已失效"));
+        when(store.updateNickname("openid-1", "小<博>&")).thenReturn(
+                Map.of("user", Map.of("nickname", "小<博>&")));
+
+        protectedMvc.perform(put("/v1/me/profile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"nickname\":\"小博\"}"))
+                .andExpect(status().isUnauthorized());
+        protectedMvc.perform(put("/v1/me/profile")
+                        .header("Authorization", "Bearer valid-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"nickname\":\"   \"}"))
+                .andExpect(status().isBadRequest());
+        protectedMvc.perform(put("/v1/me/profile")
+                        .header("Authorization", "Bearer valid-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"nickname\":\"" + "长".repeat(129) + "\"}"))
+                .andExpect(status().isBadRequest());
+        protectedMvc.perform(put("/v1/me/profile")
+                        .header("Authorization", "Bearer valid-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"nickname\":\"小<博>&\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.user.nickname").value("小<博>&"));
+
+        verify(store).updateNickname("openid-1", "小<博>&");
+    }
+
+    @Test
     void protectedRoutesPreserveClientContract() throws Exception {
         AuthService.Identity identity = new AuthService.Identity(
                 UUID.fromString("815bd2ca-cf30-4b4e-8a91-5e90f8fe8750"),

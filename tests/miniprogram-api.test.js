@@ -158,6 +158,22 @@ test('non-401 action errors do not trigger reauthentication', async () => {
   assert.equal(context.calls.requests.length, 1);
 });
 
+test('nickname update uses the authenticated profile endpoint', async () => {
+  const loaded = loadApi({
+    token: 'existing-token',
+    onRequest(request) {
+      respond(request, 200, { ok: true, data: { user: { nickname: '小<博>&' } } });
+    }
+  });
+
+  await loaded.api.callUser('updateNickname', { nickname: '小<博>&' });
+
+  assert.equal(loaded.calls.requests.length, 1);
+  assert.match(loaded.calls.requests[0].url, /\/v1\/me\/profile$/);
+  assert.equal(loaded.calls.requests[0].method, 'PUT');
+  assert.deepEqual(loaded.calls.requests[0].data, { nickname: '小<博>&' });
+});
+
 test('source mute actions substitute the path parameter and keep it out of the body', async () => {
   const loaded = loadApi({
     token: 'existing-token',
