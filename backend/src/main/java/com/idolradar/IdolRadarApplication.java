@@ -19,6 +19,7 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.event.ContextClosedEvent;
 import org.springframework.core.env.MapPropertySource;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * 统一启动入口：同一镜像通过 {@code APP_MODE} 运行 API、迁移、种子数据或 Worker。
@@ -26,6 +27,7 @@ import org.springframework.core.env.MapPropertySource;
  */
 @SpringBootApplication
 @ConfigurationPropertiesScan
+@EnableScheduling
 public class IdolRadarApplication {
 
     private static final Logger log = LoggerFactory.getLogger(IdolRadarApplication.class);
@@ -38,7 +40,8 @@ public class IdolRadarApplication {
         // 必须在 Spring 条件装配前写入最终模式，否则可能装配错误的 API/Worker Bean。
         application.addInitializers(context -> context.getEnvironment().getPropertySources().addFirst(
                 new MapPropertySource("idolradarResolvedMode", Map.of("app.mode", mode))));
-        if (!"api".equals(mode)) {
+        // 常驻 Worker 需要独立管理端口暴露运行指标；一次性命令仍不启动 Web 容器。
+        if (!java.util.Set.of("api", "worker").contains(mode)) {
             application.setWebApplicationType(WebApplicationType.NONE);
         }
 
@@ -50,7 +53,7 @@ public class IdolRadarApplication {
             return;
         }
         if ("worker".equals(mode) && context.getBean(WorkerProperties.class).isScheduleEnabled()) {
-            // 非 Web 应用没有容器主线程；main 必须等待关闭事件，避免 JVM 在首次调度前退出。
+            // 显式等待关闭事件，使 Worker 生命周期与容器信号保持一致。
             log.info("Worker 定时调度已启用");
             awaitScheduledWorkerShutdown(context);
             return;

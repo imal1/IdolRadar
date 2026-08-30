@@ -20,7 +20,9 @@ import com.idolradar.api.JdbcIdolRadarStore;
 import com.idolradar.seed.SeedProperties;
 import com.idolradar.seed.SeedService;
 import com.idolradar.worker.WorkerModels;
+import com.idolradar.worker.RuntimeMetrics;
 import com.idolradar.worker.WorkerStore;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -1309,6 +1311,36 @@ class PostgresMigrationSeedIT {
                 (Map<String, Object>) api.bootstrap("openid-profile").get("user");
         assertEquals("小<博>&", reloadedUser.get("nickname"));
         assertNotNull(reloadedUser.get("profileAuthorizedAt"));
+    }
+
+    @Test
+    @Order(27)
+    void runtimeMetricsReadDeliveryStatesAndPendingOutbox() {
+        jdbc.update("INSERT INTO idr_idol (id, name) VALUES ('idol-metrics', '指标测试')");
+        jdbc.update("INSERT INTO idr_source (id, idol_id, display_name, rss_url) "
+                + "VALUES ('source-metrics', 'idol-metrics', '指标来源', 'https://example.com/feed.xml')");
+        jdbc.update("INSERT INTO idr_post (id, idol_id, source_id, title, link, published_at, fetched_at) "
+                + "VALUES ('post-metrics', 'idol-metrics', 'source-metrics', '新动态', "
+                + "'https://example.com/post', now(), now())");
+        UUID sentUser = insertUser("openid-metrics-sent", "tpl-1", 0);
+        UUID failedUser = insertUser("openid-metrics-failed", "tpl-1", 0);
+        jdbc.update("INSERT INTO idr_notification_delivery (post_id, user_id, status) VALUES (?, ?, 'sent')",
+                "post-metrics", sentUser);
+        jdbc.update("INSERT INTO idr_notification_delivery (post_id, user_id, status) VALUES (?, ?, 'failed')",
+                "post-metrics", failedUser);
+        jdbc.update("INSERT INTO idr_notification_outbox (idol_id, post_id) VALUES (?, ?)",
+                "idol-metrics", "post-metrics");
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        RuntimeMetrics metrics = new RuntimeMetrics(registry, JdbcClient.create(testDataSource));
+
+        metrics.refreshDatabaseMetrics();
+
+        assertEquals(1, registry.get("idolradar.notification.deliveries")
+                .tag("status", "sent").gauge().value());
+        assertEquals(1, registry.get("idolradar.notification.deliveries")
+                .tag("status", "failed").gauge().value());
+        assertEquals(1, registry.get("idolradar.notification.outbox.pending").gauge().value());
+        assertEquals(1, registry.get("idolradar.database.metrics.available").gauge().value());
     }
 
     private List<String> guardedIdols(UUID userId) {

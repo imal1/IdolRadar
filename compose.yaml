@@ -48,6 +48,9 @@ x-runtime-environment: &runtime-environment
   IDOLRADAR_WORKER_NOTIFICATION_LEASE: ${NOTIFICATION_LEASE:-15m}
   IDOLRADAR_WORKER_NOTIFICATION_MAX_ATTEMPTS: ${NOTIFICATION_MAX_ATTEMPTS:-5}
   IDOLRADAR_WORKER_NOTIFICATION_RETRY_BASE: ${NOTIFICATION_RETRY_BASE:-1m}
+  # 管理端口在容器内监听所有地址，宿主机映射仍强制绑定 127.0.0.1。
+  MANAGEMENT_SERVER_ADDRESS: 0.0.0.0
+  MANAGEMENT_SERVER_PORT: 9090
   LOGGING_LEVEL_ROOT: ${LOG_LEVEL:-INFO}
 
 x-backend-service: &backend-service
@@ -200,6 +203,7 @@ services:
     # 本机健康检查/调试入口；只绑定回环地址，不对公网开放。
     ports:
       - "127.0.0.1:${APP_PORT:-8080}:8080"
+      - "127.0.0.1:${APP_METRICS_PORT:-9090}:9090"
     depends_on:
       postgres:
         condition: service_healthy
@@ -225,6 +229,9 @@ services:
       IDOLRADAR_WORKER_SCHEDULE_ENABLED: "true"
       IDOLRADAR_WORKER_SCHEDULE_INTERVAL: ${WORKER_INTERVAL:-PT30M}
       IDOLRADAR_WORKER_SCHEDULE_INITIAL_DELAY: ${WORKER_INITIAL_DELAY:-PT5S}
+    # Worker 没有公网业务接口；指标端口仅供服务器本机或 SSH 隧道采集。
+    ports:
+      - "127.0.0.1:${WORKER_METRICS_PORT:-9091}:9090"
     depends_on:
       postgres:
         condition: service_healthy
