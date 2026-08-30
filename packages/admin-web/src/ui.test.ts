@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { safe, statusBadge, sourceStatusBadge, timeText } from './ui';
+import { safe, showToast, statusBadge, sourceStatusBadge, timeText } from './ui';
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('safe', () => {
   it('转义所有会破坏模板的字符', () => {
@@ -52,5 +56,60 @@ describe('statusBadge', () => {
   it('来源抓取失败在来源页读作异常', () => {
     expect(sourceStatusBadge('failed')).toContain('异常');
     expect(sourceStatusBadge('healthy')).toContain('正常');
+  });
+});
+
+describe('showToast', () => {
+  it('弹窗打开时把提示放进顶层弹窗，关闭后放回页面', () => {
+    vi.stubGlobal('setTimeout', vi.fn(() => 1));
+    vi.stubGlobal('clearTimeout', vi.fn());
+    const toast = { textContent: '', classList: { add: vi.fn(), remove: vi.fn() } };
+    const body = { append: vi.fn() };
+    let onClose: (() => void) | undefined;
+    let containsToast = false;
+    const dialog = {
+      open: true,
+      contains: vi.fn(() => containsToast),
+      append: vi.fn(() => { containsToast = true; }),
+      addEventListener: vi.fn((_type: string, listener: () => void) => { onClose = listener; }),
+    };
+    vi.stubGlobal('document', {
+      body,
+      querySelector: vi.fn((selector: string) => selector === '#toast' ? toast : dialog),
+    });
+
+    showToast('抓取失败');
+
+    expect(dialog.append).toHaveBeenCalledWith(toast);
+    expect(dialog.addEventListener).toHaveBeenCalledWith('close', expect.any(Function), { once: true });
+    dialog.open = false;
+    onClose?.();
+    expect(body.append).toHaveBeenCalledWith(toast);
+  });
+
+  it('旧弹窗关闭时不把已进入新弹窗的提示搬回页面', () => {
+    vi.stubGlobal('setTimeout', vi.fn(() => 1));
+    vi.stubGlobal('clearTimeout', vi.fn());
+    const toast = { textContent: '', classList: { add: vi.fn(), remove: vi.fn() } };
+    const body = { append: vi.fn() };
+    let onClose: (() => void) | undefined;
+    let containsToast = false;
+    const dialog = {
+      open: true,
+      contains: vi.fn(() => containsToast),
+      append: vi.fn(() => { containsToast = true; }),
+      addEventListener: vi.fn((_type: string, listener: () => void) => { onClose = listener; }),
+    };
+    vi.stubGlobal('document', {
+      body,
+      querySelector: vi.fn((selector: string) => selector === '#toast' ? toast : dialog),
+    });
+
+    showToast('抓取失败');
+    containsToast = false;
+    dialog.open = false;
+    onClose?.();
+
+    expect(body.append).not.toHaveBeenCalled();
   });
 });
