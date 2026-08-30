@@ -74,6 +74,30 @@
   font-weight: 700;
 }
 
+.profile-name-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  min-width: 0;
+}
+
+.profile-name-input {
+  flex: 1;
+  min-width: 0;
+  height: 46rpx;
+}
+
+.profile-placeholder {
+  color: #a58a94;
+  font-weight: 500;
+}
+
+.profile-save {
+  flex: none;
+  padding: 9rpx 20rpx;
+  font-size: 21rpx;
+}
+
 .profile-note {
   margin-top: 6rpx;
   color: #a58a94;

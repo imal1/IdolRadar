@@ -18,8 +18,26 @@
     <view class="profile-card">
       <view class="user-avatar">☺️</view>
       <view class="profile-copy">
-        <text class="profile-name">微信用户</text>
-        <text class="profile-note">静默登录 · 无需注册</text>
+        <view class="profile-name-row">
+          <input
+            class="profile-name profile-name-input"
+            placeholder-class="profile-placeholder"
+            type="nickname"
+            maxlength="128"
+            value="{{nicknameDraft}}"
+            placeholder="填写微信昵称"
+            confirm-type="done"
+            bindinput="onNicknameInput"
+            bindconfirm="saveNickname"
+          ></input>
+          <button
+            class="secondary-button profile-save"
+            aria-label="保存微信昵称"
+            disabled="{{savingNickname}}"
+            bindtap="saveNickname"
+          >{{savingNickname ? '保存中' : '保存'}}</button>
+        </view>
+        <text class="profile-note">{{nickname ? '微信昵称 · 可随时修改' : '静默登录 · 填写后可识别账号'}}</text>
       </view>
     </view>
 

@@ -12,6 +12,9 @@ public interface IdolRadarStore {
 
     Map<String, Object> listIdols(String openId);
 
+    /** 保存用户主动确认的微信昵称；静默登录不得调用。 */
+    Map<String, Object> updateNickname(String openId, String nickname);
+
     /**
      * 守护一位 idol。
      *

@@ -74,6 +74,13 @@ public class ApiController {
         return ApiResponse.ok(store.listIdols(identity.openId()));
     }
 
+    @PutMapping("/v1/me/profile")
+    public ApiResponse<Map<String, Object>> updateProfile(
+            @RequestAttribute(AuthInterceptor.IDENTITY_ATTRIBUTE) AuthService.Identity identity,
+            @Valid @RequestBody ProfileRequest request) {
+        return ApiResponse.ok(store.updateNickname(identity.openId(), request.nickname()));
+    }
+
     /**
      * 守护上限由服务端按客户端类型解析；类型取自会话（签发时写入），
      * 不取自任何客户端可控输入，否则用户可以伪造出更高的上限。
@@ -138,6 +145,9 @@ public class ApiController {
     }
 
     public record SetIdolRequest(@NotBlank @Size(max = 128) String idolId) {
+    }
+
+    public record ProfileRequest(@NotBlank @Size(max = 128) String nickname) {
     }
 
     public record SubscriptionRequest(@NotNull @AssertTrue Boolean accepted) {

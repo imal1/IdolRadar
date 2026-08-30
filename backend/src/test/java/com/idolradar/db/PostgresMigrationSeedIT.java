@@ -1283,6 +1283,34 @@ class PostgresMigrationSeedIT {
         assertEquals("android", auth.findSession("b".repeat(64)).orElseThrow().clientType());
     }
 
+    @Test
+    @Order(26)
+    @SuppressWarnings("unchecked")
+    void nicknameIsSavedOnlyByTheProfileActionAndReturnedByBootstrap() {
+        UUID userId = insertUser("openid-profile", "tpl-1", 0);
+        JdbcIdolRadarStore api = new JdbcIdolRadarStore(JdbcClient.create(testDataSource), new CursorCodec());
+
+        Map<String, Object> initialUser = (Map<String, Object>) api.bootstrap("openid-profile").get("user");
+        assertNull(initialUser.get("nickname"));
+        assertNull(initialUser.get("profileAuthorizedAt"));
+        assertThrows(AppException.class, () -> api.updateNickname("openid-profile", "长".repeat(129)));
+        assertNull(jdbc.queryForObject(
+                "SELECT profile_authorized_at FROM idr_user WHERE id = ?", OffsetDateTime.class, userId));
+
+        Map<String, Object> updated = api.updateNickname("openid-profile", "  小<博>&  ");
+        Map<String, Object> updatedUser = (Map<String, Object>) updated.get("user");
+        assertEquals("小<博>&", updatedUser.get("nickname"));
+        assertNotNull(updatedUser.get("profileAuthorizedAt"));
+        assertEquals("小<博>&", jdbc.queryForObject(
+                "SELECT nickname FROM idr_user WHERE id = ?", String.class, userId));
+        assertNull(jdbc.queryForObject("SELECT avatar_url FROM idr_user WHERE id = ?", String.class, userId));
+
+        Map<String, Object> reloadedUser =
+                (Map<String, Object>) api.bootstrap("openid-profile").get("user");
+        assertEquals("小<博>&", reloadedUser.get("nickname"));
+        assertNotNull(reloadedUser.get("profileAuthorizedAt"));
+    }
+
     private List<String> guardedIdols(UUID userId) {
         return jdbc.queryForList(
                 "SELECT idol_id FROM idr_user_guard WHERE user_id = ? ORDER BY idol_id ASC",

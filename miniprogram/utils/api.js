@@ -9,6 +9,7 @@ var ACTIONS = {
   getHome: { method: 'GET', path: '/v1/home' },
   getFeed: { method: 'GET', path: '/v1/feed', query: ['cursor'] },
   listIdols: { method: 'GET', path: '/v1/idols' },
+  updateNickname: { method: 'PUT', path: '/v1/me/profile' },
   setIdol: { method: 'PUT', path: '/v1/me/idol' },
   recordSubscription: { method: 'POST', path: '/v1/me/subscriptions' },
   submitIdolRequest: { method: 'POST', path: '/v1/idol-requests' },
