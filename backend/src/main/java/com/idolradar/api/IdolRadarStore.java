@@ -1,9 +1,24 @@
 package com.idolradar.api;
 
 import java.util.Map;
+import java.util.UUID;
 
-/** 面向已认证用户的数据访问契约；调用方必须提供经 WeChat 验证的 openId。 */
+/** 面向已认证用户的数据访问契约；调用方只能提供服务端解析出的可信身份。 */
 public interface IdolRadarStore {
+    /**
+     * 领取匿名请求回执后物理删除账号；同 ID 重放或认证后账号已被并发请求删除时，
+     * 均收敛为成功但不重复计数。
+     * 全部个人关联数据随用户级联删除，共享 idol、来源和动态不受影响；requestId
+     * 不得与用户身份建立任何持久化关联。
+     */
+    boolean deleteAccount(UUID userId, UUID requestId);
+
+    /** 用重新验证的 openId 恢复注销；只删除已有账号，绝不负责建档。 */
+    boolean recoverAccountDeletion(String openId, UUID requestId);
+
+    /** 公开查询匿名注销回执；未知或未完成的请求统一返回 false。 */
+    boolean isAccountDeletionCompleted(UUID requestId);
+
     Map<String, Object> bootstrap(String openId);
 
     Map<String, Object> getHome(String openId);

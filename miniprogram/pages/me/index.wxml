@@ -1,6 +1,25 @@
 <view class="page-shell me-page {{night ? 'night' : ''}}">
   <view class="page-title">我的</view>
-  <view class="me-loading" wx:if="{{loading}}">
+  <view class="state-card" wx:if="{{accountDeletionPending}}">
+    <text class="state-title">注销结果待确认</text>
+    <text class="state-copy">上次请求可能已经完成。为避免重新创建账号，当前不会自动登录，请直接重试确认。</text>
+    <button
+      class="primary-button state-action"
+      disabled="{{deletingAccount}}"
+      bindtap="retryAccountDeletion"
+    >{{deletingAccount ? '确认中…' : '重试确认'}}</button>
+  </view>
+
+  <view class="state-card" wx:elif="{{accountDeleted}}">
+    <text class="state-title">账号已注销</text>
+    <text class="state-copy">个人身份和关联数据已永久删除。只有你主动重新开始，系统才会创建全新账号。</text>
+    <button
+      class="primary-button state-action"
+      bindtap="restartAfterAccountDeletion"
+    >以新账号重新开始</button>
+  </view>
+
+  <view class="me-loading" wx:elif="{{loading}}">
     <view class="me-loading-avatar"></view>
     <view class="me-loading-lines">
       <view></view>
@@ -115,10 +134,19 @@
         <text>动态来源说明</text>
         <text class="about-value">RSS 订阅源 ›</text>
       </view>
+      <button
+        class="about-row account-delete-row"
+        aria-label="注销账号"
+        disabled="{{deletingAccount}}"
+        bindtap="deleteAccount"
+      >
+        <text>{{deletingAccount ? '正在注销…' : '注销账号'}}</text>
+        <text class="about-value">永久删除 ›</text>
+      </button>
     </view>
 
     <text class="slogan">追星是双向奔赴的浪漫 ♡</text>
   </block>
 </view>
 
-<floating-nav current="me"></floating-nav>
+<floating-nav wx:if="{{!accountDeleted && !accountDeletionPending}}" current="me"></floating-nav>

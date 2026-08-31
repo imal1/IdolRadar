@@ -25,7 +25,10 @@ public class PreAuthRateLimitInterceptor implements HandlerInterceptor {
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
         String path = request.getRequestURI();
         boolean adminLogin = "/admin/v1/auth/login".equals(path);
-        boolean login = adminLogin || "/v1/auth/wechat/login".equals(path);
+        // 注销恢复同样会向微信交换 code，必须与普通登录共享较严额度，防止绕路耗尽上游配额。
+        boolean wechatIdentityExchange = "/v1/auth/wechat/login".equals(path)
+                || (path.startsWith("/v1/account-deletions/") && path.endsWith("/retry"));
+        boolean login = adminLogin || wechatIdentityExchange;
         int maximum = login ? properties.loginLimit() : properties.ipLimit();
         // 使用容器解析出的对端地址；可信代理处理在服务器边界配置。
         String remoteAddress = request.getRemoteAddr();

@@ -2,6 +2,7 @@ package com.idolradar.auth;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -74,6 +75,20 @@ class AuthServiceTest {
 
         AppException error = assertThrows(AppException.class, () -> service.login("x"));
         assertEquals("INVALID_INPUT", error.code());
+    }
+
+    @Test
+    void deletionVerificationDoesNotCreateAUserOrSession() {
+        FakeRepository repository = new FakeRepository();
+        AuthService service = new AuthService(
+                repository,
+                code -> new WechatGateway.WechatIdentity("openid-delete", null),
+                new BackendProperties(Duration.ofDays(30), ""));
+
+        assertEquals("openid-delete", service.verifyWechatOpenId("temporary-code"));
+        assertNull(repository.openId);
+        assertNull(repository.userId);
+        assertNull(repository.tokenHash);
     }
 
     private static final class FakeRepository implements AuthRepository {

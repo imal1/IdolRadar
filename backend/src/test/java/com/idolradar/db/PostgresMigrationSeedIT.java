@@ -3,6 +3,7 @@ package com.idolradar.db;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -17,6 +18,10 @@ import com.idolradar.admin.JdbcAdminAuthRepository;
 import com.idolradar.api.AppException;
 import com.idolradar.api.CursorCodec;
 import com.idolradar.api.JdbcIdolRadarStore;
+import com.idolradar.auth.AuthService;
+import com.idolradar.auth.JdbcAuthRepository;
+import com.idolradar.auth.WechatGateway;
+import com.idolradar.config.BackendProperties;
 import com.idolradar.seed.SeedProperties;
 import com.idolradar.seed.SeedService;
 import com.idolradar.worker.WorkerModels;
@@ -95,7 +100,8 @@ class PostgresMigrationSeedIT {
 
     @BeforeEach
     void clearBusinessData() {
-        jdbc.execute("TRUNCATE idr_admin_audit_log, idr_admin_session, idr_admin_account, "
+        jdbc.execute("TRUNCATE idr_account_deletion_receipt, idr_account_deletion_daily, "
+                + "idr_admin_audit_log, idr_admin_session, idr_admin_account, "
                 + "idr_idol_request_supporter, idr_idol_request, idr_user_source_mute, idr_user_guard, "
                 + "idr_notification_outbox, idr_notification_delivery, idr_user_session, "
                 + "idr_post, idr_user, idr_source, idr_idol CASCADE");
@@ -124,6 +130,8 @@ class PostgresMigrationSeedIT {
                 "idr_admin_account",
                 "idr_admin_audit_log",
                 "idr_admin_session",
+                "idr_account_deletion_daily",
+                "idr_account_deletion_receipt",
                 "idr_idol",
                 "idr_idol_request",
                 "idr_idol_request_supporter",
@@ -135,6 +143,34 @@ class PostgresMigrationSeedIT {
                 "idr_user_guard",
                 "idr_user_session",
                 "idr_user_source_mute")));
+
+        List<String> deletionStatColumns = jdbc.queryForList(
+                "SELECT column_name FROM information_schema.columns "
+                        + "WHERE table_schema = current_schema() "
+                        + "AND table_name = 'idr_account_deletion_daily' ORDER BY column_name",
+                String.class);
+        // 注销统计只能保留不可回连个人的日期与数量，禁止悄悄加入 user_id、openid 或精确时间。
+        assertEquals(List.of("deletion_count", "deletion_date"), deletionStatColumns);
+        assertEquals("pk_idr_account_deletion_daily", jdbc.queryForObject(
+                "SELECT constraint_name FROM information_schema.table_constraints "
+                        + "WHERE table_schema = current_schema() "
+                        + "AND table_name = 'idr_account_deletion_daily' "
+                        + "AND constraint_type = 'PRIMARY KEY'",
+                String.class));
+
+        List<String> deletionReceiptColumns = jdbc.queryForList(
+                "SELECT column_name FROM information_schema.columns "
+                        + "WHERE table_schema = current_schema() "
+                        + "AND table_name = 'idr_account_deletion_receipt' ORDER BY column_name",
+                String.class);
+        // 回执只证明随机请求是否完成，禁止保存 user_id、openid、时间或其他可回连个人的列。
+        assertEquals(List.of("completed", "request_id"), deletionReceiptColumns);
+        assertEquals("pk_idr_account_deletion_receipt", jdbc.queryForObject(
+                "SELECT constraint_name FROM information_schema.table_constraints "
+                        + "WHERE table_schema = current_schema() "
+                        + "AND table_name = 'idr_account_deletion_receipt' "
+                        + "AND constraint_type = 'PRIMARY KEY'",
+                String.class));
 
         List<String> deliveryColumns = jdbc.queryForList(
                 "SELECT column_name FROM information_schema.columns "
@@ -1341,6 +1377,193 @@ class PostgresMigrationSeedIT {
                 .tag("status", "failed").gauge().value());
         assertEquals(1, registry.get("idolradar.notification.outbox.pending").gauge().value());
         assertEquals(1, registry.get("idolradar.database.metrics.available").gauge().value());
+    }
+
+    @Test
+    @Order(28)
+    @SuppressWarnings("unchecked")
+    void deletingAnAccountRemovesPersonalDataButKeepsSharedAndOtherUserData() {
+        jdbc.update("INSERT INTO idr_idol (id, name) VALUES ('idol-delete', '注销测试')");
+        jdbc.update("INSERT INTO idr_source (id, idol_id, display_name, rss_url) "
+                + "VALUES ('source-delete', 'idol-delete', '注销测试来源', 'https://example.com/delete.xml')");
+        jdbc.update("INSERT INTO idr_post (id, idol_id, source_id, title, link, published_at, fetched_at) "
+                + "VALUES ('post-delete', 'idol-delete', 'source-delete', '共享动态', "
+                + "'https://example.com/delete-post', now(), now())");
+        UUID deletedUser = insertUser("openid-delete", "tpl-1", 6);
+        UUID otherUser = insertUser("openid-keep", "tpl-1", 2);
+        String deletedUserToken = "t".repeat(43);
+        guard(deletedUser, "idol-delete");
+        guard(otherUser, "idol-delete");
+        jdbc.update("INSERT INTO idr_user_source_mute (user_id, source_id) VALUES (?, 'source-delete'), "
+                + "(?, 'source-delete')", deletedUser, otherUser);
+        jdbc.update("INSERT INTO idr_user_session (token_hash, user_id, expires_at) VALUES "
+                + "(?, ?, now() + interval '1 day'), (?, ?, now() + interval '1 day')",
+                AuthService.hashToken(deletedUserToken), deletedUser, "b".repeat(64), otherUser);
+        jdbc.update("INSERT INTO idr_notification_delivery (post_id, user_id, status) VALUES "
+                + "('post-delete', ?, 'sent'), ('post-delete', ?, 'sent')", deletedUser, otherUser);
+        UUID idolRequestId = jdbc.queryForObject(
+                "INSERT INTO idr_idol_request (normalized_name, display_name) "
+                        + "VALUES ('new idol', 'New Idol') RETURNING id",
+                UUID.class);
+        jdbc.update("INSERT INTO idr_idol_request_supporter (request_id, user_id) VALUES (?, ?), (?, ?)",
+                idolRequestId, deletedUser, idolRequestId, otherUser);
+
+        JdbcIdolRadarStore api = new JdbcIdolRadarStore(JdbcClient.create(testDataSource), new CursorCodec());
+        TransactionTemplate transactions = new TransactionTemplate(new DataSourceTransactionManager(testDataSource));
+        UUID deletionRequestId = UUID.fromString("e2bd2107-1243-433b-92e2-bc522dd87cbb");
+        assertEquals(Boolean.TRUE, transactions.execute(status -> api.deleteAccount(deletedUser, deletionRequestId)));
+        assertTrue(api.isAccountDeletionCompleted(deletionRequestId));
+        // 同一回执重放返回原完成结果，但不能再次删除或重复计数。
+        assertEquals(Boolean.TRUE, transactions.execute(status -> api.deleteAccount(deletedUser, deletionRequestId)));
+        // 回执不绑定身份；仍存活的其他账号复用已完成 ID 必须失败，不能误报已删除。
+        assertEquals(Boolean.FALSE, transactions.execute(status -> api.deleteAccount(otherUser, deletionRequestId)));
+
+        assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM idr_user WHERE id = ?", Long.class, deletedUser));
+        assertEquals(0L, jdbc.queryForObject(
+                "SELECT count(*) FROM idr_user_session WHERE user_id = ?", Long.class, deletedUser));
+        assertEquals(0L, jdbc.queryForObject(
+                "SELECT count(*) FROM idr_user_guard WHERE user_id = ?", Long.class, deletedUser));
+        assertEquals(0L, jdbc.queryForObject(
+                "SELECT count(*) FROM idr_user_source_mute WHERE user_id = ?", Long.class, deletedUser));
+        assertEquals(0L, jdbc.queryForObject(
+                "SELECT count(*) FROM idr_notification_delivery WHERE user_id = ?", Long.class, deletedUser));
+        assertEquals(0L, jdbc.queryForObject(
+                "SELECT count(*) FROM idr_idol_request_supporter WHERE user_id = ?", Long.class, deletedUser));
+        assertEquals(1L, jdbc.queryForObject(
+                "SELECT sum(deletion_count) FROM idr_account_deletion_daily", Long.class));
+        assertEquals(1L, jdbc.queryForObject(
+                "SELECT count(*) FROM idr_account_deletion_receipt WHERE completed", Long.class));
+
+        assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM idr_idol", Long.class));
+        assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM idr_post", Long.class));
+        assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM idr_idol_request", Long.class));
+        assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM idr_user WHERE id = ?", Long.class, otherUser));
+        assertEquals(1L, jdbc.queryForObject(
+                "SELECT count(*) FROM idr_notification_delivery WHERE user_id = ?", Long.class, otherUser));
+        assertEquals(1L, jdbc.queryForObject(
+                "SELECT count(*) FROM idr_user_source_mute WHERE user_id = ?", Long.class, otherUser));
+
+        JdbcAuthRepository auth = new JdbcAuthRepository(
+                JdbcClient.create(testDataSource), new DataSourceTransactionManager(testDataSource));
+        AuthService authService = new AuthService(
+                auth,
+                code -> new WechatGateway.WechatIdentity("unused", null),
+                new BackendProperties(Duration.ofDays(30), "tpl-1"));
+        AppException rejectedSession = assertThrows(
+                AppException.class, () -> authService.authenticate("Bearer " + deletedUserToken));
+        assertEquals("UNAUTHORIZED", rejectedSession.code());
+        assertTrue(auth.findSession("b".repeat(64)).isPresent());
+
+        UUID newUser = auth.ensureUser("openid-delete");
+        assertNotEquals(deletedUser, newUser);
+        Map<String, Object> newState = api.bootstrap("openid-delete");
+        Map<String, Object> newProfile = (Map<String, Object>) newState.get("user");
+        assertEquals(Boolean.FALSE, newState.get("hasIdol"));
+        assertEquals(0, newProfile.get("subscribeQuota"));
+        assertNull(newProfile.get("nickname"));
+    }
+
+    @Test
+    @Order(29)
+    void concurrentDeletionRequestIdsBothCompleteWithoutDoubleCounting() throws Exception {
+        UUID userId = insertUser("openid-delete-race", "tpl-1", 1);
+        JdbcIdolRadarStore api = new JdbcIdolRadarStore(JdbcClient.create(testDataSource), new CursorCodec());
+        TransactionTemplate transactions = new TransactionTemplate(new DataSourceTransactionManager(testDataSource));
+        UUID firstRequestId = UUID.fromString("5cd2345c-d3cc-43d4-bea8-d6686c5d93bd");
+        UUID secondRequestId = UUID.fromString("94010cb1-a931-4447-bec3-92a50ad3bba4");
+
+        // 先锁住用户行，让两个已通过认证、使用不同 requestId 的请求都停在物理删除处。
+        CountDownLatch userLocked = new CountDownLatch(1);
+        CountDownLatch releaseUser = new CountDownLatch(1);
+        Thread blocker = new Thread(() -> transactions.executeWithoutResult(status -> {
+            jdbc.queryForObject("SELECT id FROM idr_user WHERE id = ? FOR UPDATE", UUID.class, userId);
+            userLocked.countDown();
+            try {
+                releaseUser.await(10, TimeUnit.SECONDS);
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+            }
+        }));
+        blocker.start();
+        assertTrue(userLocked.await(10, TimeUnit.SECONDS));
+
+        AtomicReference<Boolean> firstResult = new AtomicReference<>();
+        AtomicReference<Boolean> secondResult = new AtomicReference<>();
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        Thread first = deletionThread(transactions, api, userId, firstRequestId, firstResult, failure);
+        Thread second = deletionThread(transactions, api, userId, secondRequestId, secondResult, failure);
+        first.start();
+        second.start();
+        awaitBlockedDeletionCount(2);
+        releaseUser.countDown();
+        blocker.join(10_000);
+        first.join(10_000);
+        second.join(10_000);
+
+        assertNull(failure.get(), String.valueOf(failure.get()));
+        assertEquals(Boolean.TRUE, firstResult.get());
+        assertEquals(Boolean.TRUE, secondResult.get());
+        assertTrue(api.isAccountDeletionCompleted(firstRequestId));
+        assertTrue(api.isAccountDeletionCompleted(secondRequestId));
+        assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM idr_user WHERE id = ?", Long.class, userId));
+        assertEquals(1L, jdbc.queryForObject(
+                "SELECT sum(deletion_count) FROM idr_account_deletion_daily", Long.class));
+    }
+
+    @Test
+    @Order(30)
+    void deletionRecoveryRemovesExistingOpenIdWithoutCreatingAReplacement() {
+        UUID userId = insertUser("openid-delete-recovery", "tpl-1", 2);
+        UUID requestId = UUID.fromString("271c7122-8fab-4e91-8498-ff62c8b35771");
+        JdbcIdolRadarStore api = new JdbcIdolRadarStore(JdbcClient.create(testDataSource), new CursorCodec());
+        TransactionTemplate transactions = new TransactionTemplate(new DataSourceTransactionManager(testDataSource));
+
+        assertEquals(Boolean.TRUE, transactions.execute(
+                status -> api.recoverAccountDeletion("openid-delete-recovery", requestId)));
+        assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM idr_user WHERE id = ?", Long.class, userId));
+        assertEquals(0L, jdbc.queryForObject(
+                "SELECT count(*) FROM idr_user WHERE openid = 'openid-delete-recovery'", Long.class));
+        assertTrue(api.isAccountDeletionCompleted(requestId));
+        assertEquals(1L, jdbc.queryForObject(
+                "SELECT sum(deletion_count) FROM idr_account_deletion_daily", Long.class));
+
+        // 恢复请求重放只确认完成，不建用户、不重复统计。
+        assertEquals(Boolean.TRUE, transactions.execute(
+                status -> api.recoverAccountDeletion("openid-delete-recovery", requestId)));
+        assertEquals(0L, jdbc.queryForObject(
+                "SELECT count(*) FROM idr_user WHERE openid = 'openid-delete-recovery'", Long.class));
+        assertEquals(1L, jdbc.queryForObject(
+                "SELECT sum(deletion_count) FROM idr_account_deletion_daily", Long.class));
+    }
+
+    private Thread deletionThread(
+            TransactionTemplate transactions,
+            JdbcIdolRadarStore api,
+            UUID userId,
+            UUID requestId,
+            AtomicReference<Boolean> result,
+            AtomicReference<Throwable> failure) {
+        return new Thread(() -> {
+            try {
+                result.set(transactions.execute(status -> api.deleteAccount(userId, requestId)));
+            } catch (Throwable error) {
+                failure.compareAndSet(null, error);
+            }
+        });
+    }
+
+    private void awaitBlockedDeletionCount(int expected) throws InterruptedException {
+        for (int attempt = 0; attempt < 200; attempt++) {
+            Integer blocked = jdbc.queryForObject(
+                    "SELECT count(*)::int FROM pg_stat_activity "
+                            + "WHERE wait_event_type = 'Lock' AND query LIKE 'DELETE FROM idr_user%'",
+                    Integer.class);
+            if (blocked != null && blocked >= expected) {
+                return;
+            }
+            Thread.sleep(25);
+        }
+        throw new AssertionError("Timed out waiting for concurrent account deletions");
     }
 
     private List<String> guardedIdols(UUID userId) {

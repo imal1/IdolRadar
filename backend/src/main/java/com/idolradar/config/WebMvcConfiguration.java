@@ -17,7 +17,13 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 /** API 拦截器顺序与 JSON 输入策略的集中配置。 */
 @Configuration(proxyBeanMethods = false)
 public class WebMvcConfiguration implements WebMvcConfigurer {
-    private static final List<String> PROTECTED_ENDPOINTS = List.of(
+    static final List<String> PUBLIC_IP_RATE_LIMITED_ENDPOINTS = List.of(
+            "/v1/account-deletions/*",
+            "/v1/account-deletions/*/retry");
+
+    static final List<String> PROTECTED_ENDPOINTS = List.of(
+            "/v1/me",
+            "/v1/me/account-deletion-requests",
             "/v1/me/bootstrap",
             "/v1/home",
             "/v1/feed",
@@ -70,6 +76,8 @@ public class WebMvcConfiguration implements WebMvcConfigurer {
         // 顺序不可交换：先按 IP 拦截匿名洪泛，再认证，最后按用户做细粒度限流。
         registry.addInterceptor(preAuthRateLimitInterceptor)
                 .addPathPatterns("/v1/auth/wechat/login")
+                // 匿名回执可公开查询，但必须在认证前按 IP 抵御 UUID 探测洪泛。
+                .addPathPatterns(PUBLIC_IP_RATE_LIMITED_ENDPOINTS)
                 .addPathPatterns(PROTECTED_ENDPOINTS)
                 .addPathPatterns("/admin/v1/**")
                 .order(0);

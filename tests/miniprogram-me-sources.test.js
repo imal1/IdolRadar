@@ -18,7 +18,11 @@ function loadPage(callUser) {
     id: apiPath,
     filename: apiPath,
     loaded: true,
-    exports: { callUser: callUser }
+    exports: {
+      callUser: callUser,
+      isAccountDeleted: function () { return false; },
+      isAccountDeletionPending: function () { return false; }
+    }
   };
   global.Page = function (options) {
     definition = options;

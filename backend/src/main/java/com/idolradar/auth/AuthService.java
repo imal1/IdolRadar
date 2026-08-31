@@ -53,11 +53,8 @@ public class AuthService {
      * 原始 token 只返回一次，绝不持久化。
      */
     public LoginResult login(String code) {
-        if (code == null || code.length() < 4 || code.length() > 512) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "微信登录凭证无效");
-        }
-        WechatGateway.WechatIdentity wechatIdentity = wechat.exchangeCode(code);
-        UUID userId = repository.ensureUser(wechatIdentity.openId());
+        String openId = verifyWechatOpenId(code);
+        UUID userId = repository.ensureUser(openId);
         // CSPRNG 生成的 256-bit token 不嵌入用户或会话元数据，保持不可猜测。
         byte[] tokenBytes = new byte[32];
         secureRandom.nextBytes(tokenBytes);
@@ -65,6 +62,14 @@ public class AuthService {
         Instant expiresAt = Instant.now().plus(properties.sessionTtl());
         repository.createSession(userId, hashToken(token), expiresAt, CLIENT_TYPE_WECHAT_MINIPROGRAM);
         return new LoginResult(token, expiresAt);
+    }
+
+    /** 仅验证一次性微信 code 并返回 openId；注销恢复调用此方法时绝不建档或签发会话。 */
+    public String verifyWechatOpenId(String code) {
+        if (code == null || code.length() < 4 || code.length() > 512) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "微信登录凭证无效");
+        }
+        return wechat.exchangeCode(code).openId();
     }
 
     /** 校验 Bearer 语法，仅解析服务端仍有效的会话。 */

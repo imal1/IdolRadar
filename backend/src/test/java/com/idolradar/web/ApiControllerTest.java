@@ -106,6 +106,74 @@ class ApiControllerTest {
     }
 
     @Test
+    void accountDeletionUsesRequestIdAndPublishesAnonymousReceipt() throws Exception {
+        AuthService.Identity identity = identity("wechat-miniprogram");
+        UUID requestId = UUID.fromString("d1c2077c-ed79-4aec-862f-78964443f77e");
+        when(auth.authenticate("Bearer valid-token")).thenReturn(identity);
+        when(auth.verifyWechatOpenId("retry-code")).thenReturn(identity.openId());
+        when(store.deleteAccount(identity.userId(), requestId)).thenReturn(true);
+        when(store.recoverAccountDeletion(identity.openId(), requestId)).thenReturn(true);
+        when(store.isAccountDeletionCompleted(requestId)).thenReturn(true);
+
+        protectedMvc.perform(post("/v1/me/account-deletion-requests")
+                        .header("Authorization", "Bearer valid-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.requestId").isString())
+                .andExpect(jsonPath("$.data.openId").doesNotExist())
+                .andExpect(jsonPath("$.data.userId").doesNotExist());
+        protectedMvc.perform(delete("/v1/me")
+                        .header("Authorization", "Bearer valid-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"requestId\":\"" + requestId + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.deleted").value(true))
+                .andExpect(jsonPath("$.data.openId").doesNotExist())
+                .andExpect(jsonPath("$.data.userId").doesNotExist());
+        publicMvc.perform(get("/v1/account-deletions/{requestId}", requestId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.completed").value(true))
+                .andExpect(jsonPath("$.data.openId").doesNotExist())
+                .andExpect(jsonPath("$.data.userId").doesNotExist());
+        publicMvc.perform(post("/v1/account-deletions/{requestId}/retry", requestId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"code\":\"retry-code\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.deleted").value(true))
+                .andExpect(jsonPath("$.data.openId").doesNotExist())
+                .andExpect(jsonPath("$.data.userId").doesNotExist());
+
+        verify(store).deleteAccount(identity.userId(), requestId);
+        verify(auth).verifyWechatOpenId("retry-code");
+        verify(store).recoverAccountDeletion(identity.openId(), requestId);
+        verify(store).isAccountDeletionCompleted(requestId);
+    }
+
+    @Test
+    void accountDeletionRejectsMissingRequestIdAndAnUnclaimedDelete() throws Exception {
+        AuthService.Identity identity = identity("wechat-miniprogram");
+        UUID requestId = UUID.fromString("94010cb1-a931-4447-bec3-92a50ad3bba4");
+        when(auth.authenticate("Bearer valid-token")).thenReturn(identity);
+        when(store.deleteAccount(identity.userId(), requestId)).thenReturn(false);
+
+        protectedMvc.perform(delete("/v1/me")
+                        .header("Authorization", "Bearer valid-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_INPUT"));
+        protectedMvc.perform(delete("/v1/me")
+                        .header("Authorization", "Bearer valid-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"requestId\":\"" + requestId + "\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("ACCOUNT_DELETION_CONFLICT"))
+                .andExpect(jsonPath("$.data.deleted").doesNotExist());
+        publicMvc.perform(get("/v1/account-deletions/{requestId}", requestId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.completed").value(false));
+    }
+
+    @Test
     void profileNicknameUpdateRequiresAuthAndValidatesInput() throws Exception {
         when(auth.authenticate("Bearer valid-token")).thenReturn(identity("wechat-miniprogram"));
         when(auth.authenticate(null)).thenThrow(new AppException(
