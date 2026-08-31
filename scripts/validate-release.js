@@ -198,6 +198,37 @@ const requiredFiles = [
 for (const filePath of requiredFiles) requireFile(filePath);
 walkJson(root);
 
+const releaseWorkflowPath = path.join(root, '.github/workflows/release.yml');
+if (fs.existsSync(releaseWorkflowPath)) {
+  const releaseWorkflow = fs.readFileSync(releaseWorkflowPath, 'utf8');
+  const prepareStart = releaseWorkflow.indexOf('      - name: Prepare release bundle and environment');
+  const prepareEnd = releaseWorkflow.indexOf('      - name: Configure SSH', prepareStart);
+  const prepareStep = prepareStart >= 0 && prepareEnd > prepareStart
+    ? releaseWorkflow.slice(prepareStart, prepareEnd)
+    : '';
+  const notificationQuery = [
+    '            config --format json |',
+    '            jq -e \'.services.worker.environment.IDOLRADAR_WORKER_NOTIFICATIONS_ENABLED == "true"\' >/dev/null; then'
+  ].join('\n');
+  const notificationGate = [
+    '          if ! docker compose \\',
+    '            --env-file "$bundle_dir/.env" \\',
+    '            -f "$bundle_dir/compose.yaml" \\',
+    notificationQuery,
+    '            echo "::error::production/PRODUCTION_ENV_FILE 必须显式设置 NOTIFICATIONS_ENABLED=true"',
+    '            exit 1',
+    '          fi'
+  ].join('\n');
+  if (!prepareStep.includes(notificationQuery)) {
+    addError('.github/workflows/release.yml: 生产部署必须校验最终 Worker 环境 IDOLRADAR_WORKER_NOTIFICATIONS_ENABLED=true');
+  }
+  const ifCount = (prepareStep.match(/^\s+if\b/gm) || []).length;
+  const fiCount = (prepareStep.match(/^\s+fi\b/gm) || []).length;
+  if (!prepareStep.includes(notificationGate) || ifCount !== 1 || fiCount !== 1) {
+    addError('.github/workflows/release.yml: 生产通知门禁失败时必须 exit 1');
+  }
+}
+
 const packagePath = path.join(root, 'package.json');
 if (fs.existsSync(packagePath)) {
   const packageJson = parseJson(packagePath);
@@ -505,6 +536,9 @@ if (fs.existsSync(composePath)) {
   if (!/IDOLRADAR_WORKER_SCHEDULE_ENABLED:\s*"true"/.test(compose)
     || !/IDOLRADAR_WORKER_SCHEDULE_INTERVAL:/.test(compose)) {
     addError('compose.yaml: Worker 必须在容器内启用周期调度');
+  }
+  if (!/^\s+IDOLRADAR_WORKER_NOTIFICATIONS_ENABLED:\s*\$\{NOTIFICATIONS_ENABLED:-false\}\s*$/m.test(compose)) {
+    addError('compose.yaml: 自动推送必须由 NOTIFICATIONS_ENABLED 显式开启，默认保持 false');
   }
   if (!/migrate:[\s\S]*?SPRING_FLYWAY_ENABLED:\s*"true"/.test(compose)
     || !/app:[\s\S]*?SPRING_FLYWAY_ENABLED:\s*"false"/.test(compose)

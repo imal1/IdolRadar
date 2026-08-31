@@ -185,6 +185,15 @@ jobs:
             printf 'IDOLRADAR_IMAGE=%s\n' "$BACKEND_IMAGE"
             printf 'RSSHUB_IMAGE=%s\n' "$RSSHUB_IMAGE"
           } >> "$bundle_dir/.env"
+          # Compose 缺省值保持 false；生产必须显式开启，否则抓取正常但通知 outbox 不消费。
+          if ! docker compose \
+            --env-file "$bundle_dir/.env" \
+            -f "$bundle_dir/compose.yaml" \
+            config --format json |
+            jq -e '.services.worker.environment.IDOLRADAR_WORKER_NOTIFICATIONS_ENABLED == "true"' >/dev/null; then
+            echo "::error::production/PRODUCTION_ENV_FILE 必须显式设置 NOTIFICATIONS_ENABLED=true"
+            exit 1
+          fi
 
       - name: Configure SSH
         shell: bash
