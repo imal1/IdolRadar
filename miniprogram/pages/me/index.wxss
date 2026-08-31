@@ -227,6 +227,23 @@
   font-size: 23rpx;
 }
 
+.account-delete-row {
+  color: #b9405d;
+}
+
+.account-delete-row[disabled] {
+  color: #c0a8b2;
+  opacity: 0.7;
+}
+
+.night .account-delete-row {
+  color: #e78aa4;
+}
+
+.night .account-delete-row[disabled] {
+  color: #7c7699;
+}
+
 .slogan {
   display: block;
   padding: 4rpx 0;

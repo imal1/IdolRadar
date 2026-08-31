@@ -1,18 +1,21 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const test = require('node:test');
 
 const apiPath = require.resolve('../miniprogram/utils/api');
 const pagePath = require.resolve('../miniprogram/pages/me/index');
 
-function loadPage(callUser, bootstrap) {
+function loadPage(callUser, bootstrap, modalResults) {
   const originalApiModule = require.cache[apiPath];
   const originalPage = global.Page;
   const originalWx = global.wx;
   const originalGetApp = global.getApp;
   const calls = [];
   const toasts = [];
+  const modals = [];
+  const relaunches = [];
   let definition;
   const app = {
     globalData: { bootstrap: bootstrap || null },
@@ -28,6 +31,19 @@ function loadPage(callUser, bootstrap) {
       callUser(action, payload) {
         calls.push([action, payload]);
         return callUser(action, payload);
+      },
+      deleteAccount() {
+        calls.push(['deleteAccount']);
+        return callUser('deleteAccount');
+      },
+      isAccountDeleted() {
+        return false;
+      },
+      isAccountDeletionPending() {
+        return false;
+      },
+      resumeAfterAccountDeletion() {
+        calls.push(['resumeAfterAccountDeletion']);
       }
     }
   };
@@ -58,10 +74,20 @@ function loadPage(callUser, bootstrap) {
   });
   page.__calls = calls;
   page.__toasts = toasts;
+  page.__modals = modals;
+  page.__relaunches = relaunches;
   page.__installGlobals = function () {
+    const results = (modalResults || []).slice();
     global.wx = {
       showToast: function (options) { toasts.push(options); },
-      redirectTo: function () {}
+      showModal: function (options) {
+        modals.push(options);
+        queueMicrotask(function () {
+          options.success(results.shift() || { confirm: false, cancel: true });
+        });
+      },
+      redirectTo: function () {},
+      reLaunch: function (options) { relaunches.push(options); }
     };
     global.getApp = function () { return app; };
   };
@@ -119,4 +145,72 @@ test('blank nickname is rejected before sending a request', () => {
   assert.equal(result, undefined);
   assert.deepEqual(page.__calls, []);
   assert.deepEqual(page.__toasts.map((toast) => toast.title), ['昵称不能为空']);
+});
+
+test('account deletion stops when the second irreversible confirmation is cancelled', async () => {
+  const page = loadPage(function () {
+    throw new Error('取消后不应发请求');
+  }, null, [{ confirm: true }, { confirm: false, cancel: true }]);
+  page.__installGlobals();
+
+  await page.deleteAccount();
+
+  assert.equal(page.__modals.length, 2);
+  assert.match(page.__modals[0].content, /永久删除.*守护.*提醒额度.*来源设置.*推送记录/);
+  assert.match(page.__modals[1].content, /无法恢复/);
+  assert.deepEqual(page.__calls, []);
+  assert.deepEqual(page.__relaunches, []);
+});
+
+test('account deletion stays on a completion screen until the user explicitly restarts', async () => {
+  const page = loadPage(function (action) {
+    assert.equal(action, 'deleteAccount');
+    return Promise.resolve({ deleted: true });
+  }, null, [{ confirm: true }, { confirm: true }]);
+  page.__installGlobals();
+
+  await page.deleteAccount();
+
+  assert.deepEqual(page.__calls, [
+    ['deleteAccount'],
+    ['invalidateBootstrap']
+  ]);
+  assert.deepEqual(page.__relaunches, []);
+  assert.equal(page.data.accountDeleted, true);
+  assert.equal(page.data.deletingAccount, false);
+
+  page.restartAfterAccountDeletion();
+
+  assert.deepEqual(page.__calls, [
+    ['deleteAccount'],
+    ['invalidateBootstrap'],
+    ['resumeAfterAccountDeletion']
+  ]);
+  assert.deepEqual(page.__relaunches, [{ url: '/pages/picker/index?mode=first' }]);
+});
+
+test('failed account deletion stays on the page and can be retried', async () => {
+  const page = loadPage(function () {
+    return Promise.reject(new Error('删除失败'));
+  }, null, [{ confirm: true }, { confirm: true }]);
+  page.__installGlobals();
+
+  await page.deleteAccount();
+
+  assert.deepEqual(page.__calls, [['deleteAccount']]);
+  assert.deepEqual(page.__relaunches, []);
+  assert.deepEqual(page.__toasts.map((toast) => toast.title), ['删除失败']);
+  assert.equal(page.data.deletingAccount, false);
+});
+
+test('the me page exposes the account deletion entry', () => {
+  const wxml = fs.readFileSync(require.resolve('../miniprogram/pages/me/index.wxml'), 'utf8');
+
+  assert.match(wxml, /bindtap="deleteAccount"/);
+  assert.match(wxml, /bindtap="restartAfterAccountDeletion"/);
+  assert.match(wxml, /bindtap="retryAccountDeletion"/);
+  assert.match(wxml, /注销结果待确认/);
+  assert.match(wxml, /账号已注销/);
+  assert.match(wxml, /注销账号/);
+  assert.match(wxml, /永久删除/);
 });

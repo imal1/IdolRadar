@@ -39,6 +39,92 @@ public class JdbcIdolRadarStore implements IdolRadarStore {
     }
 
     @Override
+    @Transactional
+    public boolean deleteAccount(UUID userId, UUID requestId) {
+        // 匿名回执先占坑：同一 requestId 的并发请求只有一个能继续，且表中不记录用户身份。
+        if (!claimAccountDeletion(requestId)) {
+            // 唯一键冲突会等首个事务结束。同 ID 只能为已经不存在的账号重放；
+            // 存活账号复用别人的完成回执必须拒绝，不能误报其个人数据已删除。
+            return isAccountDeletionCompleted(requestId) && !userExists(userId);
+        }
+
+        // 外键以 ON DELETE CASCADE 清理个人数据；共享 idol、来源、动态等父表不受影响。
+        int deleted = jdbc.sql("DELETE FROM idr_user WHERE id = :userId")
+                .param("userId", userId)
+                .update();
+
+        completeAccountDeletion(requestId);
+        if (deleted == 0) {
+            // 身份在认证后可能已被另一 requestId 并发删除；账号已经不存在，应收敛为完成，
+            // 但不能重复累计匿名注销数，也不能返回 409 让客户端恢复普通登录。
+            return true;
+        }
+        int counted = jdbc.sql("INSERT INTO idr_account_deletion_daily (deletion_date, deletion_count) "
+                        + "VALUES ((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai')::date, 1) "
+                        + "ON CONFLICT (deletion_date) DO UPDATE "
+                        + "SET deletion_count = idr_account_deletion_daily.deletion_count + 1")
+                .update();
+        if (counted != 1) {
+            // 匿名汇总也属于注销事务，失败不能留下“已完成”回执。
+            throw new IllegalStateException("Account deletion daily count update failed");
+        }
+        return true;
+    }
+
+    @Override
+    @Transactional
+    public boolean recoverAccountDeletion(String openId, UUID requestId) {
+        Optional<UUID> userId = jdbc.sql("SELECT id FROM idr_user WHERE openid = :openId")
+                .param("openId", openId)
+                .query(UUID.class)
+                .optional();
+        if (userId.isPresent()) {
+            return deleteAccount(userId.get(), requestId);
+        }
+        if (!claimAccountDeletion(requestId)) {
+            return isAccountDeletionCompleted(requestId);
+        }
+        // 微信身份已重新验证且库内已无该账号：可能由同 ID 在途请求或另一并发请求完成。
+        // 写完成回执但不计数，因为本事务没有物理删除用户。
+        completeAccountDeletion(requestId);
+        return true;
+    }
+
+    @Override
+    public boolean isAccountDeletionCompleted(UUID requestId) {
+        return jdbc.sql("SELECT EXISTS (SELECT 1 FROM idr_account_deletion_receipt "
+                        + "WHERE request_id = :requestId AND completed = TRUE)")
+                .param("requestId", requestId)
+                .query(Boolean.class)
+                .single();
+    }
+
+    private boolean claimAccountDeletion(UUID requestId) {
+        return jdbc.sql("INSERT INTO idr_account_deletion_receipt (request_id, completed) "
+                        + "VALUES (:requestId, FALSE) ON CONFLICT (request_id) DO NOTHING")
+                .param("requestId", requestId)
+                .update() == 1;
+    }
+
+    private void completeAccountDeletion(UUID requestId) {
+        int completed = jdbc.sql("UPDATE idr_account_deletion_receipt SET completed = TRUE "
+                        + "WHERE request_id = :requestId AND completed = FALSE")
+                .param("requestId", requestId)
+                .update();
+        if (completed != 1) {
+            // 删除与完成回执必须同事务提交；异常时抛出以触发整体回滚。
+            throw new IllegalStateException("Account deletion receipt update failed");
+        }
+    }
+
+    private boolean userExists(UUID userId) {
+        return jdbc.sql("SELECT EXISTS (SELECT 1 FROM idr_user WHERE id = :userId)")
+                .param("userId", userId)
+                .query(Boolean.class)
+                .single();
+    }
+
+    @Override
     public Map<String, Object> bootstrap(String openId) {
         UserRow user = requireUser(openId);
         Map<String, Object> result = new LinkedHashMap<>();

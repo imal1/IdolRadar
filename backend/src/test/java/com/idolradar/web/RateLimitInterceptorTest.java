@@ -36,6 +36,24 @@ class RateLimitInterceptorTest {
     }
 
     @Test
+    void accountDeletionRecoverySharesTheWechatLoginLimit() {
+        AtomicReference<Call> captured = new AtomicReference<>();
+        DistributedRateLimiter limiter = (scope, subject, limit, window) -> {
+            captured.set(new Call(scope, subject, limit, window));
+            return true;
+        };
+        PreAuthRateLimitInterceptor interceptor = new PreAuthRateLimitInterceptor(
+                limiter, new RateLimitProperties(120, 20, 12, 1_200, Duration.ofMinutes(1)));
+        MockHttpServletRequest request = new MockHttpServletRequest(
+                "POST",
+                "/v1/account-deletions/2da0704e-3946-4b0b-8a35-f07376455ce1/retry");
+        request.setRemoteAddr("192.0.2.1");
+
+        assertTrue(interceptor.preHandle(request, new MockHttpServletResponse(), new Object()));
+        assertEquals(new Call("login-ip", "192.0.2.1", 20, Duration.ofMinutes(1)), captured.get());
+    }
+
+    @Test
     void adminLoginUsesIsolatedIpScope() {
         AtomicReference<Call> captured = new AtomicReference<>();
         DistributedRateLimiter limiter = (scope, subject, limit, window) -> {

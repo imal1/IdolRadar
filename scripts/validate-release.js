@@ -192,6 +192,9 @@ const requiredFiles = [
   'backend/src/main/resources/db/migration/V4__remove_legacy_demo_catalog.sql',
   'backend/src/main/resources/db/migration/V5__standardize_database_schema.sql',
   'backend/src/main/resources/db/migration/V6__complete_feature_schema.sql',
+  'backend/src/main/resources/db/migration/V7__drop_legacy_user_idol_columns.sql',
+  'backend/src/main/resources/db/migration/V8__session_client_type.sql',
+  'backend/src/main/resources/db/migration/V9__anonymous_account_deletion_stats.sql',
   'database/idols.seed.jsonl',
   'database/sources.seed.jsonl'
 ];

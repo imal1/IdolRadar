@@ -9,6 +9,11 @@ App({
   },
 
   onLaunch: function () {
+    if (api.isAccountDeleted() || api.isAccountDeletionPending()) {
+      // 冷启动仍停留在注销完成页；不得在用户明确重新开始前静默重建账号。
+      wx.reLaunch({ url: '/pages/me/index' });
+      return;
+    }
     this.ensureBootstrap().catch(function (error) {
       console.error('Silent bootstrap failed:', error);
     });

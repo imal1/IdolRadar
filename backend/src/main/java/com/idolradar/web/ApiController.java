@@ -1,7 +1,9 @@
 package com.idolradar.web;
 
 import java.util.Map;
+import java.util.UUID;
 
+import com.idolradar.api.AppException;
 import com.idolradar.api.ApiResponse;
 import com.idolradar.api.IdolRadarStore;
 import com.idolradar.auth.AuthInterceptor;
@@ -14,6 +16,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -47,6 +50,46 @@ public class ApiController {
     @PostMapping("/v1/auth/wechat/login")
     public ApiResponse<AuthService.LoginResult> login(@Valid @RequestBody LoginRequest request) {
         return ApiResponse.ok(authService.login(request.code()));
+    }
+
+    @PostMapping("/v1/me/account-deletion-requests")
+    public ApiResponse<Map<String, Object>> createAccountDeletionRequest() {
+        // 回执 ID 是匿名结果查询的完整性凭证，必须由服务端 CSPRNG 生成，不能信任客户端随机数。
+        return ApiResponse.ok(Map.of("requestId", UUID.randomUUID()));
+    }
+
+    @DeleteMapping("/v1/me")
+    public ApiResponse<Map<String, Object>> deleteAccount(
+            @RequestAttribute(AuthInterceptor.IDENTITY_ATTRIBUTE) AuthService.Identity identity,
+            @Valid @RequestBody AccountDeletionRequest request) {
+        if (!store.deleteAccount(identity.userId(), request.requestId())) {
+            throw new AppException(
+                    HttpStatus.CONFLICT,
+                    "ACCOUNT_DELETION_CONFLICT",
+                    "注销请求未完成，请查询回执后重试");
+        }
+        return ApiResponse.ok(Map.of("deleted", true));
+    }
+
+    @GetMapping("/v1/account-deletions/{requestId}")
+    public ApiResponse<Map<String, Object>> accountDeletionReceipt(@PathVariable UUID requestId) {
+        // 回执公开且匿名：只暴露是否完成，网络不确定时客户端无需有效会话即可确认结果。
+        return ApiResponse.ok(Map.of("completed", store.isAccountDeletionCompleted(requestId)));
+    }
+
+    @PostMapping("/v1/account-deletions/{requestId}/retry")
+    public ApiResponse<Map<String, Object>> recoverAccountDeletion(
+            @PathVariable UUID requestId,
+            @Valid @RequestBody LoginRequest request) {
+        // 只验证微信身份，不调用普通登录：账号若已删除，恢复流程绝不能重新建档。
+        String openId = authService.verifyWechatOpenId(request.code());
+        if (!store.recoverAccountDeletion(openId, requestId)) {
+            throw new AppException(
+                    HttpStatus.CONFLICT,
+                    "ACCOUNT_DELETION_CONFLICT",
+                    "注销请求与当前微信身份不匹配");
+        }
+        return ApiResponse.ok(Map.of("deleted", true));
     }
 
     @GetMapping("/v1/me/bootstrap")
@@ -142,6 +185,9 @@ public class ApiController {
     }
 
     public record LoginRequest(@NotBlank @Size(min = 4, max = 512) String code) {
+    }
+
+    public record AccountDeletionRequest(@NotNull UUID requestId) {
     }
 
     public record SetIdolRequest(@NotBlank @Size(max = 128) String idolId) {

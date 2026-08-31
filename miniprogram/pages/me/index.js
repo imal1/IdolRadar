@@ -78,6 +78,33 @@ function findSourceIndex(sources, sourceId) {
   return -1;
 }
 
+function confirmAccountDeletion(title, content, confirmText) {
+  return new Promise(function (resolve) {
+    wx.showModal({
+      title: title,
+      content: content,
+      cancelText: '保留账号',
+      confirmText: confirmText,
+      confirmColor: '#c4526e',
+      success: function (result) {
+        resolve(Boolean(result.confirm));
+      },
+      fail: function () {
+        resolve(false);
+      }
+    });
+  });
+}
+
+function showAccountDeletionCompleted(page) {
+  getApp().invalidateBootstrap();
+  page.setData({
+    deletingAccount: false,
+    accountDeleted: true,
+    accountDeletionPending: false
+  });
+}
+
 Page({
   data: {
     loading: true,
@@ -90,6 +117,9 @@ Page({
     nickname: '',
     nicknameDraft: '',
     savingNickname: false,
+    deletingAccount: false,
+    accountDeleted: api.isAccountDeleted(),
+    accountDeletionPending: api.isAccountDeletionPending(),
     sources: [],
     sourcesLoading: true,
     sourcesError: '',
@@ -106,7 +136,9 @@ Page({
   },
 
   onShow: function () {
-    this.loadData();
+    if (!this.data.accountDeleted && !this.data.accountDeletionPending) {
+      this.loadData();
+    }
   },
 
   loadData: function () {
@@ -273,6 +305,66 @@ Page({
     }).then(function () {
       page.setData({ subscribing: false });
     });
+  },
+
+  deleteAccount: function () {
+    if (this.data.deletingAccount) {
+      return;
+    }
+    var page = this;
+    this.setData({ deletingAccount: true });
+
+    // 注销不可逆：先完整说明删除范围，再单独确认最终动作，避免一次误触直接清空账号。
+    return confirmAccountDeletion(
+      '注销账号？',
+      '将永久删除你的昵称、守护关系、提醒额度、来源设置、申请支持和推送记录，无法恢复；idol 和动态等共享内容不会删除。',
+      '继续注销'
+    ).then(function (confirmed) {
+      if (!confirmed) {
+        return false;
+      }
+      return confirmAccountDeletion(
+        '最后确认',
+        '注销后当前登录立即失效，再次进入会被视为全新账号，历史无法恢复。确认永久注销？',
+        '永久注销'
+      );
+    }).then(function (confirmed) {
+      if (!confirmed) {
+        page.setData({ deletingAccount: false });
+        return;
+      }
+      return api.deleteAccount().then(function () {
+        showAccountDeletionCompleted(page);
+      });
+    }).catch(function (error) {
+      page.setData({
+        deletingAccount: false,
+        accountDeletionPending: api.isAccountDeletionPending()
+      });
+      wx.showToast({ title: error.message || '注销失败，请重试', icon: 'none' });
+    });
+  },
+
+  retryAccountDeletion: function () {
+    if (this.data.deletingAccount) {
+      return;
+    }
+    var page = this;
+    this.setData({ deletingAccount: true });
+    return api.deleteAccount().then(function () {
+      showAccountDeletionCompleted(page);
+    }).catch(function (error) {
+      page.setData({
+        deletingAccount: false,
+        accountDeletionPending: api.isAccountDeletionPending()
+      });
+      wx.showToast({ title: error.message || '注销结果仍未确认，请重试', icon: 'none' });
+    });
+  },
+
+  restartAfterAccountDeletion: function () {
+    api.resumeAfterAccountDeletion();
+    wx.reLaunch({ url: '/pages/picker/index?mode=first' });
   },
 
   showAbout: function () {
