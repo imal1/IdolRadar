@@ -1,7 +1,7 @@
 # IdolRadar 产品需求文档（PRD · MVP）
 
 日期：2026-07-22
-状态：已实现（待真机验收）
+状态：已实现并完成生产真机验收（2026-09-01）
 上游输入：[功能设计文档](MVP-功能设计.md)、Figma 设计稿 <https://www.figma.com/design/TZbrL98T28IApjsOkC8aBP>
 下游产物：UI 设计文档、实现计划
 
@@ -205,6 +205,6 @@ MVP 不做界面。idol 与 RSS 源由管理员通过受保护的 seed/import CL
 
 | # | 问题 | 状态与结论 | 负责人 |
 |---|---|---|---|
-| 1 | 订阅消息模板 ID 与字段格式需在微信公众平台申请后确定 | 待处理 | 管理员 |
+| 1 | 订阅消息模板 ID 与字段格式需在微信公众平台申请后确定 | 已完成：正式模板、生产投递、冷/热启动落地均已真机验证；见 [Issue #17 验收记录](acceptance/issue-17-device-e2e.md) | 管理员 |
 | 2 | "信号强度""今日动态"统计口径 | 已决议：今日按 `Asia/Shanghai` 自然日及 `published_at` 统计；信号强度为装饰性文案 | 产品 |
 | 3 | 换 idol 后旧动态的处理 | 已决议：仅替换守护关系并按当前 idol 过滤，动态数据保留；详见 [ADR-0001](./adr/0001-retain-posts-when-switching-idol.md) | 产品/开发 |
