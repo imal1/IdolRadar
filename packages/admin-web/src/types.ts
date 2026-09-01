@@ -125,18 +125,23 @@ export interface VerifyResult {
   samples?: { title: string; known: boolean }[];
 }
 
-/** 审计日志页仍为演示数据，接真实接口是独立 issue。 */
+/** 审计接口只返回排障所需白名单字段，不包含原始 detail 或身份凭据。 */
 export interface AuditEntry {
   id: string;
   operator: string;
   action: string;
-  resource: string;
-  result: 'success' | 'failed';
-  requestId: string;
-  summary: string;
-  time: string;
-  before: string;
-  after: string;
+  resourceType: string;
+  resourceId: string | null;
+  requestId: string | null;
+  httpStatus: number | null;
+  succeeded: boolean;
+  createdAt: string;
+}
+
+export interface AuditPage {
+  audits: AuditEntry[];
+  hasMore: boolean;
+  nextCursor: string | null;
 }
 
 /** 核心指标：注册队列漏斗、24 小时内回访率与按自然日的趋势序列。 */

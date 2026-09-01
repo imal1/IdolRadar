@@ -74,12 +74,8 @@ export function pageHeading(title: string, description: string, actions = ''): s
   return `<div class="page-heading"><div><h2>${title}</h2><p>${description}</p></div><div class="toolbar">${actions}</div></div>`;
 }
 
-export function searchField(id: string, placeholder: string): string {
-  return `<label class="search-field">${icon('search')}<input id="${id}" type="search" placeholder="${placeholder}" autocomplete="off" /></label>`;
-}
-
-export function pagination(): string {
-  return '<div class="pagination"><button type="button" data-toast="已经是第一页">‹</button><button class="is-active" type="button">1</button><button type="button" data-toast="原型当前只有一页数据">2</button><button type="button" data-toast="原型当前只有一页数据">›</button></div>';
+export function searchField(id: string, placeholder: string, value = ''): string {
+  return `<label class="search-field">${icon('search')}<input id="${id}" type="search" placeholder="${safe(placeholder)}" value="${safe(value)}" autocomplete="off" /></label>`;
 }
 
 let toastTimer: ReturnType<typeof setTimeout>;

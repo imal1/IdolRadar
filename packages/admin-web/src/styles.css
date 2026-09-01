@@ -230,6 +230,7 @@ tbody tr:hover { background: #fffafa; }
 .pagination { display: flex; align-items: center; justify-content: flex-end; gap: 7px; padding: 14px 18px; border-top: 1px solid var(--line); }
 .pagination button { min-width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 8px; background: white; color: var(--muted); font-size: 10px; }
 .pagination button.is-active { border-color: var(--rose-600); background: var(--rose-600); color: white; }
+.pagination button:disabled { cursor: not-allowed; opacity: .45; }
 .empty { padding: 58px 20px; color: var(--muted); text-align: center; font-size: 12px; }
 
 .source-overview { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
