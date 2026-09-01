@@ -5,6 +5,8 @@ import java.util.UUID;
 
 import com.idolradar.admin.AdminAuthInterceptor;
 import com.idolradar.admin.AdminAuthService;
+import com.idolradar.admin.AdminAuditContext;
+import com.idolradar.admin.AdminAuditOperation;
 import com.idolradar.admin.AdminDeliveryStore;
 import com.idolradar.api.ApiResponse;
 import com.idolradar.api.AppException;
@@ -17,6 +19,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -69,10 +72,15 @@ public class AdminDeliveryController {
 
     /** 真实发送前按管理员限流；额度、目标校验、去重均由 NotificationService 原子完成。 */
     @PostMapping("/admin/v1/notification-targets/{userId}/send")
+    @AdminAuditOperation(
+            action = "定向推送",
+            resourceType = "notification_target",
+            resourceIdVariable = "userId")
     public ApiResponse<Map<String, String>> sendToTarget(
             @PathVariable UUID userId,
             @RequestAttribute(AdminAuthInterceptor.IDENTITY_ATTRIBUTE) AdminAuthService.Identity identity,
-            @Valid @RequestBody TargetedSendRequest request) {
+            @Valid @RequestBody TargetedSendRequest request,
+            HttpServletRequest servletRequest) {
         if (!rateLimiter.allow(
                 "admin-targeted-notification",
                 identity.adminId().toString(),
@@ -98,7 +106,11 @@ public class AdminDeliveryController {
         }
 
         return switch (outcome) {
-            case SENT -> ApiResponse.ok(Map.of("status", "sent"));
+            case SENT -> {
+                AdminAuditContext.attach(
+                        servletRequest, null, AdminAuditContext.deliverySummary(request.postId(), "sent"));
+                yield ApiResponse.ok(Map.of("status", "sent"));
+            }
             case SKIPPED -> throw new AppException(
                     HttpStatus.CONFLICT,
                     "TARGET_NOT_SENDABLE",

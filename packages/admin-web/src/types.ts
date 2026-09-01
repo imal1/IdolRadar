@@ -135,6 +135,8 @@ export interface AuditEntry {
   requestId: string | null;
   httpStatus: number | null;
   succeeded: boolean;
+  beforeSummary: string | null;
+  afterSummary: string | null;
   createdAt: string;
 }
 

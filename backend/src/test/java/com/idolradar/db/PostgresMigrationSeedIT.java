@@ -555,11 +555,17 @@ class PostgresMigrationSeedIT {
                 "/admin/v1/auth/logout",
                 "request-admin-1",
                 200,
-                true));
+                true,
+                "名称：旧名；状态：启用",
+                "名称：新名；状态：停用"));
         assertEquals(1L, jdbc.queryForObject(
                 "SELECT count(*) FROM idr_admin_audit_log WHERE admin_id = ?",
                 Long.class,
                 adminId));
+        var semanticAudit = audit.find(new AdminAuditRepository.AuditQuery(
+                "request-admin-1", "success", 24, null)).audits().getFirst();
+        assertEquals("名称：旧名；状态：启用", semanticAudit.beforeSummary());
+        assertEquals("名称：新名；状态：停用", semanticAudit.afterSummary());
 
         audit.record(new AdminAuditRepository.AuditEvent(
                 adminId,
@@ -568,7 +574,9 @@ class PostgresMigrationSeedIT {
                 "/admin/v1/idols/idol-1",
                 "request-admin-failed",
                 409,
-                false));
+                false,
+                null,
+                null));
         for (int index = 0; index < 52; index++) {
             audit.record(new AdminAuditRepository.AuditEvent(
                     adminId,
@@ -577,7 +585,9 @@ class PostgresMigrationSeedIT {
                     "/admin/v1/sources",
                     "request-admin-page-" + index,
                     200,
-                    true));
+                    true,
+                    null,
+                    null));
         }
         UUID reviewerId = auth.createAdmin(
                 "review-admin", "pbkdf2-sha256$210000$salt$review-hash").adminId();
@@ -589,7 +599,9 @@ class PostgresMigrationSeedIT {
                     "/admin/v1/idol-requests/request-" + index,
                     "request-review-page-" + index,
                     200,
-                    true));
+                    true,
+                    null,
+                    null));
         }
         // 强制同一时间戳，验证跨管理员归并只依赖稳定的 (created_at, id) 游标。
         jdbc.update("UPDATE idr_admin_audit_log SET created_at = date_trunc('second', now())");
@@ -620,7 +632,8 @@ class PostgresMigrationSeedIT {
         assertTrue(allAudits.stream().anyMatch(entry -> "ops-admin".equals(entry.operator())));
         assertTrue(allAudits.stream().anyMatch(entry -> "review-admin".equals(entry.operator())));
 
-        assertTrue(auth.revokeAccess(adminId));
+        assertEquals(java.util.Optional.of(true), auth.revokeAccess(adminId));
+        assertEquals(java.util.Optional.of(false), auth.revokeAccess(adminId));
         assertFalse(auth.findSession(tokenHash).isPresent());
         assertEquals(Boolean.FALSE, jdbc.queryForObject(
                 "SELECT enabled FROM idr_admin_account WHERE id = ?",

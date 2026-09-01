@@ -7,6 +7,8 @@ import jakarta.servlet.http.HttpServletResponse;
 
 import org.slf4j.MDC;
 import org.springframework.stereotype.Component;
+import org.springframework.web.method.HandlerMethod;
+import org.springframework.web.servlet.HandlerMapping;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 /** 集中审计所有已认证的管理端写请求，避免各 Controller 遗漏记录。 */
@@ -34,18 +36,51 @@ public class AdminAuditInterceptor implements HandlerInterceptor {
             // 未认证请求不会进入管理业务；也没有可信 admin_id 可写入审计外键。
             return;
         }
-        String path = request.getRequestURI();
-        if (path.length() > 128) {
-            path = path.substring(0, 128);
-        }
+        AuditDescriptor descriptor = descriptor(request, handler);
+        AdminAuditContext.Details details = AdminAuditContext.details(request);
         int status = response.getStatus();
         auditRepository.record(new AdminAuditRepository.AuditEvent(
                 identity.adminId(),
-                "HTTP_" + request.getMethod(),
-                "admin_route",
-                path,
+                descriptor.action(),
+                descriptor.resourceType(),
+                details.resourceId() == null ? descriptor.resourceId() : truncate(details.resourceId()),
                 MDC.get("requestId"),
                 status,
-                exception == null && status < 400));
+                exception == null && status < 400,
+                details.beforeSummary(),
+                details.afterSummary()));
+    }
+
+    private static AuditDescriptor descriptor(HttpServletRequest request, Object handler) {
+        if (handler instanceof HandlerMethod method) {
+            AdminAuditOperation operation = method.getMethodAnnotation(AdminAuditOperation.class);
+            if (operation != null) {
+                return new AuditDescriptor(
+                        operation.action(),
+                        operation.resourceType(),
+                        pathVariable(request, operation.resourceIdVariable()));
+            }
+        }
+        return new AuditDescriptor(
+                "HTTP_" + request.getMethod(), "admin_route", truncate(request.getRequestURI()));
+    }
+
+    private static String pathVariable(HttpServletRequest request, String name) {
+        if (name.isBlank()) {
+            return null;
+        }
+        Object attribute = request.getAttribute(HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE);
+        if (attribute instanceof java.util.Map<?, ?> variables) {
+            Object value = variables.get(name);
+            return value == null ? null : truncate(String.valueOf(value));
+        }
+        return null;
+    }
+
+    private static String truncate(String value) {
+        return value.length() > 128 ? value.substring(0, 128) : value;
+    }
+
+    private record AuditDescriptor(String action, String resourceType, String resourceId) {
     }
 }

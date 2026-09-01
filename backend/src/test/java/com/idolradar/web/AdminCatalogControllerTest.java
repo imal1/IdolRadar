@@ -30,6 +30,7 @@ import com.idolradar.worker.FeedException;
 import com.idolradar.worker.FeedUrlGuard;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
@@ -135,18 +136,67 @@ class AdminCatalogControllerTest {
 
     @Test
     void updatingIdolCarriesOptimisticVersionAndIsAudited() throws Exception {
-        when(store.updateIdol("idol-1", null, null, null, false, 3))
-                .thenReturn(Map.of("id", "idol-1", "enabled", false, "version", 4));
+        String avatar = "https://example.com/avatar?token=avatar-secret";
+        String bio = "password=profile-secret";
+        when(store.idolAuditSummary("idol-1")).thenReturn("名称：旧名称；状态：启用");
+        when(store.updateIdol("idol-1", null, avatar, bio, false, 3))
+                .thenReturn(Map.of(
+                        "id", "idol-1", "name", "旧名称", "enabled", false, "version", 4));
 
         mvc.perform(patch("/admin/v1/idols/{idolId}", "idol-1")
                         .header("Authorization", "Bearer " + TOKEN)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"enabled\":false,\"version\":3}"))
+                        .content("""
+                                {"avatar":"%s","bio":"%s","enabled":false,"version":3}
+                                """.formatted(avatar, bio)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.version").value(4));
 
-        verify(store).updateIdol("idol-1", null, null, null, false, 3);
-        verify(audit).record(any(AdminAuditRepository.AuditEvent.class));
+        verify(store).updateIdol("idol-1", null, avatar, bio, false, 3);
+        ArgumentCaptor<AdminAuditRepository.AuditEvent> event =
+                ArgumentCaptor.forClass(AdminAuditRepository.AuditEvent.class);
+        verify(audit).record(event.capture());
+        org.junit.jupiter.api.Assertions.assertEquals("修改 idol", event.getValue().action());
+        org.junit.jupiter.api.Assertions.assertEquals("idol", event.getValue().resourceType());
+        org.junit.jupiter.api.Assertions.assertEquals("idol-1", event.getValue().resourceId());
+        org.junit.jupiter.api.Assertions.assertEquals("名称：旧名称；状态：启用", event.getValue().beforeSummary());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "名称：旧名称；状态：停用；头像：已修改；简介：已修改",
+                event.getValue().afterSummary());
+        org.junit.jupiter.api.Assertions.assertFalse(event.getValue().afterSummary().contains("avatar-secret"));
+        org.junit.jupiter.api.Assertions.assertFalse(event.getValue().afterSummary().contains("profile-secret"));
+    }
+
+    @Test
+    void updatingSourceNeverCopiesSensitiveUrlValuesIntoAuditSummary() throws Exception {
+        String sensitiveUrl = "https://example.com/feed?password=admin-password"
+                + "&token=service-token&openid=user-openid&secret=service-secret";
+        when(verifier.verifyUrl(sensitiveUrl)).thenReturn(Map.of("ok", true));
+        when(store.sourceAuditSummary("source-1"))
+                .thenReturn("名称：微博；渠道：微博；状态：启用");
+        when(store.updateSource("source-1", sensitiveUrl, null, null, null, 2))
+                .thenReturn(Map.of(
+                        "id", "source-1", "displayName", "微博", "channel", "微博",
+                        "enabled", true, "version", 3));
+
+        mvc.perform(patch("/admin/v1/sources/{sourceId}", "source-1")
+                        .header("Authorization", "Bearer " + TOKEN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"rssUrl":"%s","version":2}
+                                """.formatted(sensitiveUrl)))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<AdminAuditRepository.AuditEvent> event =
+                ArgumentCaptor.forClass(AdminAuditRepository.AuditEvent.class);
+        verify(audit).record(event.capture());
+        String summaries = event.getValue().beforeSummary() + event.getValue().afterSummary();
+        org.junit.jupiter.api.Assertions.assertEquals("修改动态源", event.getValue().action());
+        org.junit.jupiter.api.Assertions.assertTrue(event.getValue().afterSummary().contains("抓取地址：已修改"));
+        org.junit.jupiter.api.Assertions.assertFalse(summaries.contains("admin-password"));
+        org.junit.jupiter.api.Assertions.assertFalse(summaries.contains("service-token"));
+        org.junit.jupiter.api.Assertions.assertFalse(summaries.contains("user-openid"));
+        org.junit.jupiter.api.Assertions.assertFalse(summaries.contains("service-secret"));
     }
 
     @Test

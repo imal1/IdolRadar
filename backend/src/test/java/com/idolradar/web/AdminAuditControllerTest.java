@@ -65,6 +65,8 @@ class AdminAuditControllerTest {
                 "request-67",
                 200,
                 true,
+                "名称：旧名；状态：启用",
+                "名称：新名；状态：停用",
                 Instant.parse("2026-09-01T01:02:03Z"))), false, null));
 
         mvc.perform(get("/admin/v1/audit-logs")
@@ -78,6 +80,8 @@ class AdminAuditControllerTest {
                 .andExpect(jsonPath("$.data.audits[0].requestId").value("request-67"))
                 .andExpect(jsonPath("$.data.audits[0].httpStatus").value(200))
                 .andExpect(jsonPath("$.data.audits[0].succeeded").value(true))
+                .andExpect(jsonPath("$.data.audits[0].beforeSummary").value("名称：旧名；状态：启用"))
+                .andExpect(jsonPath("$.data.audits[0].afterSummary").value("名称：新名；状态：停用"))
                 .andExpect(content().string(org.hamcrest.Matchers.not(
                         org.hamcrest.Matchers.containsString("detail"))))
                 .andExpect(content().string(org.hamcrest.Matchers.not(

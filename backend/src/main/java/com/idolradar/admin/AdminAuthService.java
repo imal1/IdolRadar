@@ -102,11 +102,10 @@ public class AdminAuthService {
         repository.revokeSession(identity.tokenHash());
     }
 
-    /** 停用目标管理员并吊销其全部会话。 */
-    public void revokeAccess(UUID adminId) {
-        if (!repository.revokeAccess(adminId)) {
-            throw new AppException(HttpStatus.NOT_FOUND, "ADMIN_NOT_FOUND", "管理员不存在");
-        }
+    /** 停用目标管理员并吊销其全部会话；返回修改前是否启用，供审计生成真实前后摘要。 */
+    public boolean revokeAccess(UUID adminId) {
+        return repository.revokeAccess(adminId).orElseThrow(() ->
+                new AppException(HttpStatus.NOT_FOUND, "ADMIN_NOT_FOUND", "管理员不存在"));
     }
 
     /** 一次性创建管理员；仅供 admin-bootstrap 命令模式使用。 */

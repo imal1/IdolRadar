@@ -124,11 +124,12 @@ class AdminAuthServiceTest {
         }
 
         @Override
-        public boolean revokeAccess(UUID adminId) {
-            if (!ADMIN_ID.equals(adminId) || username == null) return false;
+        public Optional<Boolean> revokeAccess(UUID adminId) {
+            if (!ADMIN_ID.equals(adminId) || username == null) return Optional.empty();
+            boolean previous = enabled;
             enabled = false;
             sessionRevoked = true;
-            return true;
+            return Optional.of(previous);
         }
 
         @Override

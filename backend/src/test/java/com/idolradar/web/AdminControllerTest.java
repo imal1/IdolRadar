@@ -106,6 +106,7 @@ class AdminControllerTest {
     void authenticatedWriteIsAuditedAndCanRevokeAdmin() throws Exception {
         AdminAuthService.Identity identity = identity();
         when(auth.authenticate("Bearer " + "a".repeat(43))).thenReturn(identity);
+        when(auth.revokeAccess(ADMIN_ID)).thenReturn(true);
 
         protectedMvc.perform(post("/admin/v1/admins/{adminId}/revoke", ADMIN_ID)
                         .header("Authorization", "Bearer " + "a".repeat(43)))
@@ -117,8 +118,28 @@ class AdminControllerTest {
                 ArgumentCaptor.forClass(AdminAuditRepository.AuditEvent.class);
         verify(audit).record(event.capture());
         org.junit.jupiter.api.Assertions.assertEquals(ADMIN_ID, event.getValue().adminId());
-        org.junit.jupiter.api.Assertions.assertEquals("HTTP_POST", event.getValue().action());
+        org.junit.jupiter.api.Assertions.assertEquals("撤销管理员", event.getValue().action());
+        org.junit.jupiter.api.Assertions.assertEquals("admin_account", event.getValue().resourceType());
+        org.junit.jupiter.api.Assertions.assertEquals(ADMIN_ID.toString(), event.getValue().resourceId());
+        org.junit.jupiter.api.Assertions.assertEquals("访问权限：启用", event.getValue().beforeSummary());
+        org.junit.jupiter.api.Assertions.assertEquals("访问权限：停用", event.getValue().afterSummary());
         org.junit.jupiter.api.Assertions.assertTrue(event.getValue().succeeded());
+    }
+
+    @Test
+    void repeatedAdminRevocationAuditsDisabledToDisabled() throws Exception {
+        when(auth.authenticate("Bearer " + "a".repeat(43))).thenReturn(identity());
+        when(auth.revokeAccess(ADMIN_ID)).thenReturn(false);
+
+        protectedMvc.perform(post("/admin/v1/admins/{adminId}/revoke", ADMIN_ID)
+                        .header("Authorization", "Bearer " + "a".repeat(43)))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<AdminAuditRepository.AuditEvent> event =
+                ArgumentCaptor.forClass(AdminAuditRepository.AuditEvent.class);
+        verify(audit).record(event.capture());
+        org.junit.jupiter.api.Assertions.assertEquals("访问权限：停用", event.getValue().beforeSummary());
+        org.junit.jupiter.api.Assertions.assertEquals("访问权限：停用", event.getValue().afterSummary());
     }
 
     @Test
@@ -131,7 +152,12 @@ class AdminControllerTest {
                 .andExpect(status().isOk());
 
         verify(auth).logout(identity);
-        verify(audit).record(any(AdminAuditRepository.AuditEvent.class));
+        ArgumentCaptor<AdminAuditRepository.AuditEvent> event =
+                ArgumentCaptor.forClass(AdminAuditRepository.AuditEvent.class);
+        verify(audit).record(event.capture());
+        org.junit.jupiter.api.Assertions.assertEquals("HTTP_POST", event.getValue().action());
+        org.junit.jupiter.api.Assertions.assertEquals("admin_route", event.getValue().resourceType());
+        org.junit.jupiter.api.Assertions.assertEquals("/admin/v1/auth/logout", event.getValue().resourceId());
     }
 
     private static AdminAuthService.Identity identity() {
