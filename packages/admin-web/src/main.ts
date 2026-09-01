@@ -2,7 +2,7 @@ import './styles.css';
 
 import { ADMIN_TOKEN_KEY, adminRequest, bindApiHandlers, errorMessage, requestReload } from './api';
 import { state, type PageId } from './state';
-import type { AdminProfile, CoreMetrics, DeliveryBoard, Idol, IdolRequest, LoginResult, NotificationTarget, Source, SourceSummary } from './types';
+import type { AdminProfile, AuditPage, CoreMetrics, DeliveryBoard, Idol, IdolRequest, LoginResult, NotificationTarget, Source, SourceSummary } from './types';
 import { $, $$, icon, showToast } from './ui';
 
 import * as audit from './pages/audit';
@@ -106,6 +106,12 @@ async function loadMetrics(): Promise<void> {
   state.metrics = await adminRequest<CoreMetrics>(`/admin/v1/metrics?rangeDays=${state.metricsRange}`);
 }
 
+async function loadAudits(): Promise<void> {
+  const data = await adminRequest<AuditPage>(`/admin/v1/audit-logs?${audit.queryParams()}`);
+  state.audits = data.audits;
+  state.auditNextCursor = data.nextCursor;
+}
+
 // 新建来源要选所属 idol，所以来源页同时需要 idol 列表；投递页的 idol 筛选同理。
 const loaders: Partial<Record<PageId, () => Promise<unknown>>> = {
   dashboard: () => Promise.all([loadMetrics(), loadSources(), loadRequests(), loadDeliveries({ scoped: false })]),
@@ -113,6 +119,7 @@ const loaders: Partial<Record<PageId, () => Promise<unknown>>> = {
   sources: () => Promise.all([loadSources(), loadIdols()]),
   deliveries: () => Promise.all([loadDeliveries(), loadIdols(), loadNotificationTargets()]),
   requests: loadRequests,
+  audit: loadAudits,
 };
 
 /** 拉取当前页数据并重绘；失败时保留上一次结果并提示，不把页面清空。 */
@@ -172,10 +179,24 @@ function handlePageChange(event: Event): void {
   const target = event.target as HTMLSelectElement;
   if (target.id === 'idol-status') { state.idolStatus = target.value; renderPage({ focus: false }); }
   if (target.id === 'source-status') { state.sourceStatus = target.value; requestReload(); }
-  if (target.id === 'audit-result') { state.auditResult = target.value; renderPage({ focus: false }); }
+  if (target.id === 'audit-result') { state.auditResult = target.value; resetAuditPagination(); requestReload(); }
+  if (target.id === 'audit-range') { state.auditRangeHours = Number(target.value); resetAuditPagination(); requestReload(); }
+  if (target.id === 'audit-search') audit.applySearch(target.value);
   if (target.id === 'delivery-range') { state.deliveryRange = Number(target.value); requestReload(); }
   if (target.id === 'delivery-idol') { state.deliveryIdol = target.value; requestReload(); }
   if (target.id === 'dashboard-range') { state.metricsRange = Number(target.value); requestReload(); }
+}
+
+function handlePageKeydown(event: KeyboardEvent): void {
+  const target = event.target as HTMLInputElement;
+  if (target.id !== 'audit-search' || event.key !== 'Enter') return;
+  event.preventDefault();
+  audit.applySearch(target.value);
+}
+
+function resetAuditPagination(): void {
+  state.auditCursors = [null];
+  state.auditNextCursor = null;
 }
 
 function handlePageInput(event: Event): void {
@@ -183,7 +204,6 @@ function handlePageInput(event: Event): void {
     'idol-search': ['#idol-table', '#idol-count', '位'],
     'source-search': ['#source-table', '#source-count', '个来源'],
     'request-search': ['#request-table', '#request-count', '条申请'],
-    'audit-search': ['#audit-table', '#audit-count', '条记录'],
   };
   const input = event.target as HTMLInputElement;
   const target = filters[input.id];
@@ -296,6 +316,7 @@ async function initialize(): Promise<void> {
   $('#sidebar-account').addEventListener('click', toggleAccountMenu);
   $('#page-root').addEventListener('click', handlePageClick);
   $('#page-root').addEventListener('change', handlePageChange);
+  $('#page-root').addEventListener('keydown', handlePageKeydown);
   $('#page-root').addEventListener('input', handlePageInput);
   $('.nav').addEventListener('click', (event) => {
     const button = (event.target as HTMLElement).closest<HTMLElement>('[data-page]');

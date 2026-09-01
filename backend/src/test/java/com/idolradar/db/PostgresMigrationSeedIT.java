@@ -535,7 +535,7 @@ class PostgresMigrationSeedIT {
         JdbcClient client = JdbcClient.create(testDataSource);
         DataSourceTransactionManager transactionManager = new DataSourceTransactionManager(testDataSource);
         JdbcAdminAuthRepository auth = new JdbcAdminAuthRepository(client, transactionManager);
-        JdbcAdminAuditRepository audit = new JdbcAdminAuditRepository(client);
+        JdbcAdminAuditRepository audit = new JdbcAdminAuditRepository(client, new CursorCodec());
 
         UUID adminId = auth.createAdmin("ops-admin", "pbkdf2-sha256$210000$salt$hash-value").adminId();
         // bootstrap 会被运维重复执行：同名账号必须返回既有 ID 且不改写口令哈希。
@@ -560,6 +560,65 @@ class PostgresMigrationSeedIT {
                 "SELECT count(*) FROM idr_admin_audit_log WHERE admin_id = ?",
                 Long.class,
                 adminId));
+
+        audit.record(new AdminAuditRepository.AuditEvent(
+                adminId,
+                "HTTP_PATCH",
+                "admin_route",
+                "/admin/v1/idols/idol-1",
+                "request-admin-failed",
+                409,
+                false));
+        for (int index = 0; index < 52; index++) {
+            audit.record(new AdminAuditRepository.AuditEvent(
+                    adminId,
+                    "HTTP_POST",
+                    "admin_route",
+                    "/admin/v1/sources",
+                    "request-admin-page-" + index,
+                    200,
+                    true));
+        }
+        UUID reviewerId = auth.createAdmin(
+                "review-admin", "pbkdf2-sha256$210000$salt$review-hash").adminId();
+        for (int index = 0; index < 2; index++) {
+            audit.record(new AdminAuditRepository.AuditEvent(
+                    reviewerId,
+                    "HTTP_PUT",
+                    "admin_route",
+                    "/admin/v1/idol-requests/request-" + index,
+                    "request-review-page-" + index,
+                    200,
+                    true));
+        }
+        // 强制同一时间戳，验证跨管理员归并只依赖稳定的 (created_at, id) 游标。
+        jdbc.update("UPDATE idr_admin_audit_log SET created_at = date_trunc('second', now())");
+
+        var failed = audit.find(new AdminAuditRepository.AuditQuery(
+                "request-admin-failed", "failed", 24, null));
+        assertEquals(1, failed.audits().size());
+        assertEquals("ops-admin", failed.audits().getFirst().operator());
+        assertEquals(409, failed.audits().getFirst().httpStatus());
+        assertFalse(failed.audits().getFirst().succeeded());
+        assertTrue(audit.find(new AdminAuditRepository.AuditQuery(
+                "missing-request", "all", 24, null)).audits().isEmpty());
+        assertEquals(2, audit.find(new AdminAuditRepository.AuditQuery(
+                "review-admin", "success", 24, null)).audits().size());
+
+        // 键集游标必须跨过同一批快速写入的时间戳，不重复、也不依赖 offset。
+        var firstPage = audit.find(new AdminAuditRepository.AuditQuery(null, "all", 24, null));
+        assertEquals(50, firstPage.audits().size());
+        assertTrue(firstPage.hasMore());
+        assertNotNull(firstPage.nextCursor());
+        var secondPage = audit.find(new AdminAuditRepository.AuditQuery(
+                null, "all", 24, firstPage.nextCursor()));
+        assertFalse(secondPage.audits().isEmpty());
+        assertTrue(secondPage.audits().stream().noneMatch(second -> firstPage.audits().stream()
+                .anyMatch(first -> first.id().equals(second.id()))));
+        var allAudits = Stream.concat(firstPage.audits().stream(), secondPage.audits().stream()).toList();
+        assertEquals(56, allAudits.size());
+        assertTrue(allAudits.stream().anyMatch(entry -> "ops-admin".equals(entry.operator())));
+        assertTrue(allAudits.stream().anyMatch(entry -> "review-admin".equals(entry.operator())));
 
         assertTrue(auth.revokeAccess(adminId));
         assertFalse(auth.findSession(tokenHash).isPresent());

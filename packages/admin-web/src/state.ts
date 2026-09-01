@@ -27,6 +27,10 @@ export interface AdminState {
   sourceStatus: string;
   idolStatus: string;
   auditResult: string;
+  auditSearch: string;
+  auditRangeHours: number;
+  auditCursors: (string | null)[];
+  auditNextCursor: string | null;
   idols: Idol[];
   sources: Source[];
   sourceSummary: SourceSummary;
@@ -51,6 +55,11 @@ export const state: AdminState = {
   sourceStatus: 'all',
   idolStatus: 'all',
   auditResult: 'all',
+  auditSearch: '',
+  auditRangeHours: 24,
+  // 栈顶是当前页游标；上一页直接出栈，无需 offset 或额外历史请求。
+  auditCursors: [null],
+  auditNextCursor: null,
   idols: [],
   sources: [],
   sourceSummary: {},
@@ -66,13 +75,5 @@ export const state: AdminState = {
   // null 表示尚未拉到指标：页面据此显示占位，而不是把 0 当成真实结果展示。
   metrics: null,
   metricsRange: 7,
-  // 审计日志仍为演示数据，接真实接口是独立 issue。
-  audits: [
-    { id: 'AUD-00816', operator: '管理员', action: 'UPDATE_SOURCE', resource: 'idr_source#13', result: 'success', requestId: 'req-3a9f71', summary: '更新来源 RSS 地址', time: '今天 11:06:22', before: '{"rss_url":"https://old.example.com/route"}', after: '{"rss_url":"https://rss.example.com/weibo/user/guard-club"}' },
-    { id: 'AUD-00815', operator: '管理员', action: 'TRIGGER_FETCH', resource: 'idr_source#13', result: 'success', requestId: 'req-3a9e82', summary: '手动验证来源，不产生推送', time: '今天 10:52:18', before: '{}', after: '{"parsed":20,"inserted":0,"status":"SUCCESS"}' },
-    { id: 'AUD-00814', operator: '管理员', action: 'REVIEW_IDOL_REQUEST', resource: 'idr_idol_request#204', result: 'success', requestId: 'req-3a9d11', summary: '通过申请并关联正式 idol', time: '今天 10:31:44', before: '{"status":"PENDING"}', after: '{"status":"APPROVED","approved_idol_id":5}' },
-    { id: 'AUD-00813', operator: '管理员', action: 'DISABLE_IDOL', resource: 'idr_idol#4', result: 'success', requestId: 'req-3a9c09', summary: '停用 idol，保留历史业务数据', time: '今天 09:18:03', before: '{"enabled":true}', after: '{"enabled":false,"version":2}' },
-    { id: 'AUD-00812', operator: '管理员', action: 'LOGIN', resource: 'idr_admin_account#1', result: 'success', requestId: 'req-3a9b42', summary: '管理员登录', time: '今天 08:58:11', before: '{}', after: '{}' },
-    { id: 'AUD-00811', operator: '管理员', action: 'UPDATE_IDOL', resource: 'idr_idol#2', result: 'failed', requestId: 'req-3a9a67', summary: '版本冲突，修改未保存', time: '昨天 22:40:09', before: '{"version":3}', after: '{"expected_version":4}' },
-  ],
+  audits: [],
 };
