@@ -3,6 +3,8 @@ package com.idolradar.web;
 import java.util.Map;
 import java.util.UUID;
 
+import com.idolradar.admin.AdminAuditContext;
+import com.idolradar.admin.AdminAuditOperation;
 import com.idolradar.admin.AdminAuthInterceptor;
 import com.idolradar.admin.AdminAuthService;
 import com.idolradar.admin.AdminCatalogStore;
@@ -16,6 +18,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,8 +33,8 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * 管理端运营入口：抓取源健康度、idol/源维护、idol 申请审核。
  *
- * <p>鉴权由 AdminAuthInterceptor 统一处理，写操作由 AdminAuditInterceptor 统一审计，
- * 因此这里不重复任何鉴权或审计代码。
+ * <p>鉴权由 AdminAuthInterceptor 统一处理，写操作由 AdminAuditInterceptor 统一落库；
+ * Controller 只提供不含凭据和原始请求体的白名单业务摘要。
  */
 @RestController
 @ConditionalOnProperty(name = "app.mode", havingValue = "api", matchIfMissing = true)
@@ -68,42 +71,71 @@ public class AdminCatalogController {
     }
 
     @PostMapping("/admin/v1/idols")
-    public ApiResponse<Map<String, Object>> createIdol(@Valid @RequestBody CreateIdolRequest request) {
-        return ApiResponse.ok(store.createIdol(
+    @AdminAuditOperation(action = "新增 idol", resourceType = "idol")
+    public ApiResponse<Map<String, Object>> createIdol(
+            @Valid @RequestBody CreateIdolRequest request,
+            HttpServletRequest servletRequest) {
+        Map<String, Object> created = store.createIdol(
                 request.id(), request.name(), request.avatar(), request.bio(),
-                request.enabled() == null || request.enabled()));
+                request.enabled() == null || request.enabled());
+        AdminAuditContext.attach(
+                servletRequest, request.id(), null, AdminAuditContext.idolSummary(created, false, false));
+        return ApiResponse.ok(created);
     }
 
     @PatchMapping("/admin/v1/idols/{idolId}")
+    @AdminAuditOperation(action = "修改 idol", resourceType = "idol", resourceIdVariable = "idolId")
     public ApiResponse<Map<String, Object>> updateIdol(
             @PathVariable @Size(max = 128) String idolId,
-            @Valid @RequestBody UpdateIdolRequest request) {
-        return ApiResponse.ok(store.updateIdol(
-                idolId, request.name(), request.avatar(), request.bio(), request.enabled(), request.version()));
+            @Valid @RequestBody UpdateIdolRequest request,
+            HttpServletRequest servletRequest) {
+        String before = store.idolAuditSummary(idolId);
+        Map<String, Object> updated = store.updateIdol(
+                idolId, request.name(), request.avatar(), request.bio(), request.enabled(), request.version());
+        AdminAuditContext.attach(
+                servletRequest,
+                before,
+                AdminAuditContext.idolSummary(
+                        updated, request.avatar() != null, request.bio() != null));
+        return ApiResponse.ok(updated);
     }
 
     @PostMapping("/admin/v1/sources")
-    public ApiResponse<Map<String, Object>> createSource(@Valid @RequestBody CreateSourceRequest request) {
+    @AdminAuditOperation(action = "新增动态源", resourceType = "source")
+    public ApiResponse<Map<String, Object>> createSource(
+            @Valid @RequestBody CreateSourceRequest request,
+            HttpServletRequest servletRequest) {
         // 新建即校验抓取地址，把 SSRF 防护挡在入库之前，而不是等 worker 抓取时才发现。
         urlGuard.validateUrl(request.rssUrl());
         requireFetchable(request.rssUrl());
-        return ApiResponse.ok(store.createSource(
+        Map<String, Object> created = store.createSource(
                 request.id(), request.idolId(), request.rssUrl(), request.displayName(),
                 request.channel() == null ? "RSS" : request.channel(),
-                request.enabled() == null || request.enabled()));
+                request.enabled() == null || request.enabled());
+        AdminAuditContext.attach(
+                servletRequest, request.id(), null, AdminAuditContext.sourceSummary(created, false));
+        return ApiResponse.ok(created);
     }
 
     @PatchMapping("/admin/v1/sources/{sourceId}")
+    @AdminAuditOperation(action = "修改动态源", resourceType = "source", resourceIdVariable = "sourceId")
     public ApiResponse<Map<String, Object>> updateSource(
             @PathVariable @Size(max = 128) String sourceId,
-            @Valid @RequestBody UpdateSourceRequest request) {
+            @Valid @RequestBody UpdateSourceRequest request,
+            HttpServletRequest servletRequest) {
         if (request.rssUrl() != null) {
             urlGuard.validateUrl(request.rssUrl());
             requireFetchable(request.rssUrl());
         }
-        return ApiResponse.ok(store.updateSource(
+        String before = store.sourceAuditSummary(sourceId);
+        Map<String, Object> updated = store.updateSource(
                 sourceId, request.rssUrl(), request.displayName(), request.channel(),
-                request.enabled(), request.version()));
+                request.enabled(), request.version());
+        AdminAuditContext.attach(
+                servletRequest,
+                before,
+                AdminAuditContext.sourceSummary(updated, request.rssUrl() != null));
+        return ApiResponse.ok(updated);
     }
 
     /**
@@ -124,6 +156,7 @@ public class AdminCatalogController {
 
     /** 手动抓取一次并返回结果；只读，不入库、不推送。 */
     @PostMapping("/admin/v1/sources/{sourceId}/verify")
+    @AdminAuditOperation(action = "验证动态源", resourceType = "source", resourceIdVariable = "sourceId")
     public ApiResponse<Map<String, Object>> verifySource(
             @PathVariable @Size(max = 128) String sourceId,
             @RequestAttribute(AdminAuthInterceptor.IDENTITY_ATTRIBUTE) AdminAuthService.Identity identity) {
@@ -143,21 +176,37 @@ public class AdminCatalogController {
     }
 
     @PostMapping("/admin/v1/idol-requests/{requestId}/approve")
+    @AdminAuditOperation(
+            action = "通过 idol 申请",
+            resourceType = "idol_request",
+            resourceIdVariable = "requestId")
     public ApiResponse<Map<String, Object>> approveRequest(
             @PathVariable UUID requestId,
             @RequestAttribute(AdminAuthInterceptor.IDENTITY_ATTRIBUTE) AdminAuthService.Identity identity,
-            @Valid @RequestBody ApproveRequest request) {
-        return ApiResponse.ok(store.approveRequest(
+            @Valid @RequestBody ApproveRequest request,
+            HttpServletRequest servletRequest) {
+        Map<String, Object> updated = store.approveRequest(
                 requestId, identity.adminId(), request.reviewNote(),
-                request.idolId(), request.idolName(), request.bio()));
+                request.idolId(), request.idolName(), request.bio());
+        AdminAuditContext.attach(
+                servletRequest, "状态：pending", AdminAuditContext.requestSummary(updated));
+        return ApiResponse.ok(updated);
     }
 
     @PostMapping("/admin/v1/idol-requests/{requestId}/reject")
+    @AdminAuditOperation(
+            action = "驳回 idol 申请",
+            resourceType = "idol_request",
+            resourceIdVariable = "requestId")
     public ApiResponse<Map<String, Object>> rejectRequest(
             @PathVariable UUID requestId,
             @RequestAttribute(AdminAuthInterceptor.IDENTITY_ATTRIBUTE) AdminAuthService.Identity identity,
-            @Valid @RequestBody RejectRequest request) {
-        return ApiResponse.ok(store.rejectRequest(requestId, identity.adminId(), request.reviewNote()));
+            @Valid @RequestBody RejectRequest request,
+            HttpServletRequest servletRequest) {
+        Map<String, Object> updated = store.rejectRequest(requestId, identity.adminId(), request.reviewNote());
+        AdminAuditContext.attach(
+                servletRequest, "状态：pending", AdminAuditContext.requestSummary(updated));
+        return ApiResponse.ok(updated);
     }
 
     public record CreateIdolRequest(

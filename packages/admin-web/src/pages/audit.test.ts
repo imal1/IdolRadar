@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { state } from '../state';
-import { actions, applySearch, queryParams, render } from './audit';
+import { actions, applySearch, detailBody, queryParams, render } from './audit';
 
 const original = structuredClone(state);
 
@@ -21,6 +21,8 @@ beforeEach(() => {
       requestId: 'request-67',
       httpStatus: 409,
       succeeded: false,
+      beforeSummary: '名称：<script>旧名</script>；状态：启用',
+      afterSummary: '名称：新名；状态：停用',
       createdAt: '2026-09-01T01:02:03Z',
     }],
   });
@@ -29,7 +31,7 @@ beforeEach(() => {
 afterEach(() => Object.assign(state, structuredClone(original)));
 
 describe('真实审计日志页', () => {
-  it('渲染服务端记录并删除演示控件与敏感详情', () => {
+  it('渲染服务端记录并提供安全的业务摘要详情', () => {
     const html = render();
 
     expect(html).toContain('&lt;script&gt;ops-admin&lt;/script&gt;');
@@ -41,9 +43,11 @@ describe('真实审计日志页', () => {
     expect(html).not.toContain('<script>ops-admin</script>');
     expect(html).not.toContain('data-toast');
     expect(html).not.toContain('导出当前结果');
-    expect(html).not.toContain('修改前');
-    expect(html).not.toContain('修改后');
-    expect(html).not.toContain('详情</button>');
+    expect(html).toContain('data-action="audit-detail"');
+    expect(detailBody(state.audits[0]!)).toContain('修改前');
+    expect(detailBody(state.audits[0]!)).toContain('修改后');
+    expect(detailBody(state.audits[0]!)).toContain('&lt;script&gt;旧名&lt;/script&gt;');
+    expect(detailBody(state.audits[0]!)).not.toContain('<script>旧名</script>');
   });
 
   it('把结果、时间、搜索和游标交给服务端', () => {

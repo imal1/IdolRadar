@@ -5,7 +5,10 @@ import java.util.UUID;
 
 import com.idolradar.admin.AdminAuthInterceptor;
 import com.idolradar.admin.AdminAuthService;
+import com.idolradar.admin.AdminAuditContext;
+import com.idolradar.admin.AdminAuditOperation;
 import com.idolradar.api.ApiResponse;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
@@ -48,8 +51,18 @@ public class AdminController {
     }
 
     @PostMapping("/admin/v1/admins/{adminId}/revoke")
-    public ApiResponse<Map<String, Boolean>> revokeAccess(@PathVariable UUID adminId) {
-        authService.revokeAccess(adminId);
+    @AdminAuditOperation(
+            action = "撤销管理员",
+            resourceType = "admin_account",
+            resourceIdVariable = "adminId")
+    public ApiResponse<Map<String, Boolean>> revokeAccess(
+            @PathVariable UUID adminId,
+            HttpServletRequest servletRequest) {
+        boolean wasEnabled = authService.revokeAccess(adminId);
+        AdminAuditContext.attach(
+                servletRequest,
+                wasEnabled ? "访问权限：启用" : "访问权限：停用",
+                "访问权限：停用");
         return ApiResponse.ok(Map.of("revoked", true));
     }
 

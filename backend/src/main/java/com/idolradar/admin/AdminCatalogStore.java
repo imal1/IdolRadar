@@ -152,6 +152,10 @@ public class AdminCatalogStore {
         return findIdol(id);
     }
 
+    public String idolAuditSummary(String id) {
+        return AdminAuditContext.idolSummary(findIdol(id), false, false);
+    }
+
     /** 乐观锁更新；版本不匹配时报冲突，避免两名管理员互相覆盖。 */
     public Map<String, Object> updateIdol(
             String id, String name, String avatar, String bio, Boolean enabled, int expectedVersion) {
@@ -199,6 +203,10 @@ public class AdminCatalogStore {
             throw new AppException(HttpStatus.CONFLICT, "SOURCE_EXISTS", "该源标识已存在");
         }
         return findSource(id);
+    }
+
+    public String sourceAuditSummary(String id) {
+        return AdminAuditContext.sourceSummary(findSource(id), false);
     }
 
     public Map<String, Object> updateSource(

@@ -105,15 +105,15 @@ public class JdbcAdminAuthRepository implements AdminAuthRepository {
     }
 
     @Override
-    public boolean revokeAccess(UUID adminId) {
-        return Boolean.TRUE.equals(transactions.execute(status -> {
-            Optional<UUID> locked = jdbc.sql(
-                            "SELECT id FROM idr_admin_account WHERE id = :adminId FOR UPDATE")
+    public Optional<Boolean> revokeAccess(UUID adminId) {
+        Optional<Boolean> previous = transactions.execute(status -> {
+            Optional<Boolean> enabled = jdbc.sql(
+                            "SELECT enabled FROM idr_admin_account WHERE id = :adminId FOR UPDATE")
                     .param("adminId", adminId)
-                    .query(UUID.class)
+                    .query(Boolean.class)
                     .optional();
-            if (locked.isEmpty()) {
-                return false;
+            if (enabled.isEmpty()) {
+                return Optional.empty();
             }
             jdbc.sql("UPDATE idr_admin_account SET enabled = false, version = version + 1, "
                             + "updated_at = NOW() WHERE id = :adminId")
@@ -123,8 +123,9 @@ public class JdbcAdminAuthRepository implements AdminAuthRepository {
                             + "WHERE admin_id = :adminId")
                     .param("adminId", adminId)
                     .update();
-            return true;
-        }));
+            return enabled;
+        });
+        return previous == null ? Optional.empty() : previous;
     }
 
     @Override

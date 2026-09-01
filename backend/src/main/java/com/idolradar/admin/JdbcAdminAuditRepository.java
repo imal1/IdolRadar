@@ -1,5 +1,6 @@
 package com.idolradar.admin;
 
+import java.sql.Types;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -30,17 +31,21 @@ public class JdbcAdminAuditRepository implements AdminAuditRepository {
 
     @Override
     public void record(AuditEvent event) {
-        // detail 只记录路由与状态，禁止把密码、token、OpenID 或请求体写入审计表。
+        // detail 只记录状态与控制器构造的白名单摘要，禁止写入原始请求体。
         jdbc.sql("INSERT INTO idr_admin_audit_log "
                         + "(admin_id, action, resource_type, resource_id, request_id, detail, succeeded) "
                         + "VALUES (:adminId, :action, :resourceType, :resourceId, :requestId, "
-                        + "jsonb_build_object('httpStatus', :httpStatus), :succeeded)")
+                        + "jsonb_strip_nulls(jsonb_build_object("
+                        + "'httpStatus', :httpStatus, 'beforeSummary', :beforeSummary, "
+                        + "'afterSummary', :afterSummary)), :succeeded)")
                 .param("adminId", event.adminId())
                 .param("action", event.action())
                 .param("resourceType", event.resourceType())
                 .param("resourceId", event.resourceId())
                 .param("requestId", event.requestId())
                 .param("httpStatus", event.httpStatus())
+                .param("beforeSummary", event.beforeSummary(), Types.VARCHAR)
+                .param("afterSummary", event.afterSummary(), Types.VARCHAR)
                 .param("succeeded", event.succeeded())
                 .update();
     }
@@ -67,12 +72,14 @@ public class JdbcAdminAuditRepository implements AdminAuditRepository {
         JdbcClient.StatementSpec statement = jdbc.sql("""
                         SELECT page.id, a.username AS operator, page.action, page.resource_type,
                                page.resource_id, page.request_id, page.http_status,
-                               page.succeeded, page.created_at
+                               page.succeeded, page.before_summary, page.after_summary, page.created_at
                         FROM idr_admin_account a
                         CROSS JOIN LATERAL (
                           SELECT l.id, l.action, l.resource_type, l.resource_id, l.request_id,
                                  CASE WHEN (l.detail ->> 'httpStatus') ~ '^[1-5][0-9]{2}$'
                                       THEN (l.detail ->> 'httpStatus')::integer END AS http_status,
+                                 l.detail ->> 'beforeSummary' AS before_summary,
+                                 l.detail ->> 'afterSummary' AS after_summary,
                                  l.succeeded, l.created_at
                           FROM idr_admin_audit_log l
                           WHERE l.admin_id = a.id
@@ -107,6 +114,8 @@ public class JdbcAdminAuditRepository implements AdminAuditRepository {
                         resultSet.getString("request_id"),
                         resultSet.getObject("http_status", Integer.class),
                         resultSet.getBoolean("succeeded"),
+                        resultSet.getString("before_summary"),
+                        resultSet.getString("after_summary"),
                         resultSet.getObject("created_at", OffsetDateTime.class).toInstant()))
                 .list();
         boolean hasMore = rows.size() > PAGE_SIZE;

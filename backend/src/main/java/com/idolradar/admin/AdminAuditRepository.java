@@ -18,13 +18,15 @@ public interface AdminAuditRepository {
             String resourceId,
             String requestId,
             int httpStatus,
-            boolean succeeded) {
+            boolean succeeded,
+            String beforeSummary,
+            String afterSummary) {
     }
 
     record AuditQuery(String search, String result, Integer rangeHours, String cursor) {
     }
 
-    /** API 白名单字段；故意不暴露 detail、adminId 或任何身份凭据。 */
+    /** API 白名单字段；只提取安全业务摘要，不暴露原始 detail、adminId 或身份凭据。 */
     record AuditEntry(
             UUID id,
             String operator,
@@ -34,6 +36,8 @@ public interface AdminAuditRepository {
             String requestId,
             Integer httpStatus,
             boolean succeeded,
+            String beforeSummary,
+            String afterSummary,
             Instant createdAt) {
     }
 

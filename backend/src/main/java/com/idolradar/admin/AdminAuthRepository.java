@@ -15,8 +15,8 @@ public interface AdminAuthRepository {
 
     void revokeSession(String tokenHash);
 
-    /** 停用账号并原子吊销全部会话；账号不存在时返回 false。 */
-    boolean revokeAccess(UUID adminId);
+    /** 停用账号并原子吊销全部会话；返回修改前启停状态，账号不存在时为空。 */
+    Optional<Boolean> revokeAccess(UUID adminId);
 
     /**
      * 幂等创建管理员：用户名已存在时不创建、不覆盖口令，只返回既有账号。
