@@ -422,6 +422,46 @@ class PostgresMigrationSeedIT {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void repositorySeedPublishesExpandedCatalogWithoutReplacingExistingIdols() {
+        // 正式种子必须走导入与名单公开边界；部署扩库不能清除管理员已有目录或用户守护关系。
+        jdbc.update("INSERT INTO idr_idol (id, name) VALUES ('idol-existing', '已有守护对象')");
+        UUID userId = insertUser("openid-catalog", "", 0);
+        guard(userId, "idol-existing");
+        SeedProperties properties = new SeedProperties();
+        properties.setDirectory(Path.of("..", "database"));
+        SeedService service = new SeedService(jdbc, new ObjectMapper(), properties);
+        TransactionTemplate transactions = new TransactionTemplate(new DataSourceTransactionManager(testDataSource));
+        JdbcIdolRadarStore api = new JdbcIdolRadarStore(JdbcClient.create(testDataSource), new CursorCodec());
+
+        SeedService.SeedResult first = transactions.execute(status -> service.seed());
+        Map<String, Object> catalog = api.listIdols("openid-catalog");
+        assertEquals(first, transactions.execute(status -> service.seed()));
+        assertEquals(catalog, api.listIdols("openid-catalog"), "重复导入不能增加 idol 或来源");
+        assertEquals("idol-existing", catalog.get("currentIdolId"));
+        List<Map<String, Object>> idols = (List<Map<String, Object>>) catalog.get("idols");
+        List<Object> names = idols.stream().map(idol -> idol.get("name")).toList();
+        assertTrue(names.containsAll(List.of("王一博", "虞书欣", "白鹿", "已有守护对象")),
+                "正式种子导入后的可选名单：" + names);
+        // #20 分批接入：失败候选不能因发版重新开放；三位全部上线的验收仍由 Issue 跟踪。
+        assertFalse(names.contains("赵露思"), "未通过真实抓取的候选不得进入可选名单");
+        assertEquals(first.idols() + 1, jdbc.queryForObject("SELECT count(*) FROM idr_idol", Integer.class),
+                "扩库必须保留已有目录，包含尚未启用的候选");
+        assertEquals(0, jdbc.queryForObject(
+                "SELECT count(*) FROM idr_source WHERE idol_id = 'idol_zhao_lusi'", Integer.class),
+                "失败来源不能通过 seed 绕过后台校验入库");
+        for (String name : List.of("虞书欣", "白鹿")) {
+            List<Map<String, Object>> matches = idols.stream()
+                    .filter(idol -> name.equals(idol.get("name"))).toList();
+            assertEquals(1, matches.size(), name + "只能有一条目录记录");
+            Map<String, Object> idol = matches.getFirst();
+            assertFalse(((String) idol.get("avatar")).isBlank(), name + "必须有头像");
+            assertFalse(((String) idol.get("bio")).isBlank(), name + "必须有简介");
+            assertTrue(((Number) idol.get("sourceCount")).intValue() >= 1, name + "必须有启用来源");
+        }
+    }
+
+    @Test
     @Order(6)
     void v4RemovesOnlyLegacyDemoCatalogAndKeepsUserAccount() {
         String cleanupSchema = "idolradar_cleanup_" + UUID.randomUUID().toString().replace("-", "");
