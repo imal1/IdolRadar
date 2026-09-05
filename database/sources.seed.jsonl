@@ -1,1 +1,3 @@
 {"_id":"source_wang_yibo_weibo","idolId":"idol_wang_yibo","rsshubRoute":"/weibo/user/5492443184","displayName":"王一博 · 微博","channel":"微博","enabled":true,"lastFetchStatus":"never"}
+{"_id":"source_yu_shuxin_weibo","idolId":"idol_yu_shuxin","rsshubRoute":"/weibo/user/5620452341","displayName":"虞书欣 · 微博","channel":"微博","enabled":true,"lastFetchStatus":"never"}
+{"_id":"source_bai_lu_weibo","idolId":"idol_bai_lu","rsshubRoute":"/weibo/user/2616380702","displayName":"白鹿 · 微博","channel":"微博","enabled":true,"lastFetchStatus":"never"}
